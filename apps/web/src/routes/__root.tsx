@@ -89,6 +89,16 @@ export const Route = createRootRoute({
       };
     }
 
+    if (
+      location.pathname !== "/pair" &&
+      location.pathname !== "/workbench" &&
+      location.pathname !== "/account" &&
+      !location.pathname.startsWith("/draft/") &&
+      !/^\/[^/]+\/[^/]+$/.test(location.pathname)
+    ) {
+      throw redirect({ to: "/workbench", replace: true });
+    }
+
     if (isLocalEnvironmentDisabled() || isHostedStaticApp(new URL(window.location.href))) {
       return {
         authGateState: {
@@ -102,6 +112,7 @@ export const Route = createRootRoute({
       authGateState.status === "authenticated" &&
       getDesktopSnapShotBridge() &&
       shouldResumeSnapShotSetupOnStartup() &&
+      location.pathname !== "/workbench" &&
       location.pathname !== "/settings/snap-shot"
     ) {
       throw redirect({ to: "/settings/snap-shot", replace: true });
@@ -136,6 +147,10 @@ function RootRouteNotFoundView() {
 function RootRouteView() {
   useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const pathname = useLocation({ select: (location) => location.pathname });
+  const isWorkbenchRoute = pathname === "/workbench";
+  const isConsultancyChatRoute =
+    pathname.startsWith("/draft/") || /^\/[^/]+\/[^/]+$/.test(pathname);
+  const isAccountRoute = pathname === "/account";
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
   const returningFromWelcomeRef = useRef(pathname === "/welcome");
@@ -195,13 +210,22 @@ function RootRouteView() {
     );
   }
 
-  const appShell = (
-    <CommandPalette>
+  const appShell =
+    isWorkbenchRoute || isConsultancyChatRoute ? (
       <AppSidebarLayout>
         <Outlet />
       </AppSidebarLayout>
-    </CommandPalette>
-  );
+    ) : isAccountRoute ? (
+      <main className="flex h-dvh min-h-0 w-full flex-col bg-background text-foreground surface-grain">
+        <Outlet />
+      </main>
+    ) : (
+      <CommandPalette>
+        <AppSidebarLayout>
+          <Outlet />
+        </AppSidebarLayout>
+      </CommandPalette>
+    );
 
   // FirstRunGate holds back everything below it — including EventRouter,
   // whose welcome payload navigates into a thread — until the first-run
@@ -216,31 +240,37 @@ function RootRouteView() {
         <GlassAppearanceSync />
         <FontAppearanceSync />
         <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated}
-          hostedStatic={authGateState.status === "hosted-static"}
+          enabled={primaryEnvironmentAuthenticated && !isWorkbenchRoute}
+          hostedStatic={authGateState.status === "hosted-static" && !isWorkbenchRoute}
         >
-          {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
-          {isElectron ? <RunningThreadKeepAlive /> : null}
-          <RelayClientInstallDialog />
-          <ConnectOnboardingDialog />
-          <SshPasswordPromptDialog />
-          <SnapShotCoordinator />
-          <ThreadNotificationCoordinator />
-          <ConfirmDialogHost />
-          <CustomSnoozeDialogHost />
-          <SlowRpcRequestToastCoordinator />
-          <ProjectCloneToastCoordinator />
-          <HostedStaticEnvironmentBootstrap />
-          {primaryEnvironmentAuthenticated ? (
+          {!isWorkbenchRoute ? (
+            <>
+              {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+              {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+              {isElectron ? <RunningThreadKeepAlive /> : null}
+              <RelayClientInstallDialog />
+              <ConnectOnboardingDialog />
+              <SshPasswordPromptDialog />
+              <SnapShotCoordinator />
+              <ThreadNotificationCoordinator />
+              <ConfirmDialogHost />
+              <CustomSnoozeDialogHost />
+              <SlowRpcRequestToastCoordinator />
+              <ProjectCloneToastCoordinator />
+              <HostedStaticEnvironmentBootstrap />
+            </>
+          ) : null}
+          {primaryEnvironmentAuthenticated && !isWorkbenchRoute ? (
             <EventRouter skipInitialBootstrapNavigation={returningFromWelcomeRef.current} />
           ) : null}
-          {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}
-          {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+          {primaryEnvironmentAuthenticated && !isWorkbenchRoute ? <PlanAgentSelectionHeal /> : null}
+          {primaryEnvironmentAuthenticated && !isWorkbenchRoute ? (
+            <ProviderUpdateLaunchNotification />
+          ) : null}
           {appShell}
           {/* Above the router: a theme draft is judged by walking the app, so the
               editor has to survive navigation away from settings. */}
-          <ThemeEditorHost />
+          {!isWorkbenchRoute ? <ThemeEditorHost /> : null}
         </FirstRunGate>
       </AnchoredToastProvider>
     </ToastProvider>

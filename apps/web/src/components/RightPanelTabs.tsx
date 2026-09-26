@@ -79,6 +79,9 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
+const isFilesAction = (action: { readonly label: string }): boolean => action.label === "Files";
+const isFileSurface = (surface: RightPanelSurface): boolean => surface.kind === "file";
+
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
@@ -417,7 +420,8 @@ function RightPanelEmptyState(props: {
 
   type SurfaceAction = (typeof actions)[number];
 
-  const availableActions = actions.filter((action) => action.available);
+  const fileActions = actions.filter(isFilesAction);
+  const availableActions = fileActions.filter((action) => action.available);
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -514,7 +518,7 @@ function RightPanelEmptyState(props: {
       <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
-          {actions.map((action) =>
+          {fileActions.map((action) =>
             action.available ? (
               // The row is itself a button, so the profile chooser sits beside
               // it in a wrapper rather than inside it. Hover lives on the
@@ -934,9 +938,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDevice,
     },
   ] as const;
+  const fileSurfaceActions = addSurfaceActions.filter(isFilesAction);
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const action = surfaceShortcutActionForKey(addSurfaceActions, event.nativeEvent);
+    const action = surfaceShortcutActionForKey(fileSurfaceActions, event.nativeEvent);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
@@ -1128,7 +1133,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           data-right-panel-tab-list
         >
           <div className="flex h-full w-max min-w-full items-center gap-1">
-            {props.surfaces.map((surface) => {
+            {props.surfaces.filter(isFileSurface).map((surface) => {
               const active = surface.id === props.activeSurfaceId;
               const pending = props.pendingSurfaceIds.has(surface.id);
               const title = surfaceTitle(surface, props.previewSessions, props.terminalLabelsById);
@@ -1278,7 +1283,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   sideOffset={6}
                   onKeyDownCapture={handleAddSurfaceMenuKeyDown}
                 >
-                  {addSurfaceActions.map((action) => {
+                  {fileSurfaceActions.map((action) => {
                     const Icon = action.icon;
                     // Browser collapses into one row: clicking the trigger opens
                     // the default profile (the common case stays one click),

@@ -1,0 +1,12 @@
+{
+  "template": "category-counts",
+  "title": "<count by category>",
+  "subtitle": "<scope and date range, if applicable>",
+  "chart": "horizontal-bar",
+  "category_label": "<department or category>",
+  "value_label": "<count definition>",
+  "categories": ["<category 1>", "<category 2>"],
+  "values": [0, 0],
+  "count_method": "<rows or distinct IDs>",
+  "note": "<omitted categories or filtering assumption, if needed>"
+}

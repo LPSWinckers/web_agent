@@ -89,6 +89,7 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
+        setPrompt,
       } = useComposerDraftStore.getState();
       const requestingRouteHref = router.state.location.href;
       const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
@@ -128,6 +129,14 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
+      const seedConsultancyPrompt = (draftId: DraftId) => {
+        if (project?.title.includes(" / ") && !getComposerDraft(draftId)?.prompt.trim()) {
+          setPrompt(
+            draftId,
+            "Read the relevant files in this project before answering. Cite the files you use. ",
+          );
+        }
+      };
       // The resolver applies project overrides and, until the server has
       // folded them, the aggregate's own legacy fields.
       const projectSettings = resolveProjectSettings(
@@ -315,6 +324,7 @@ export function useNewThreadHandler() {
             routeTargetAfterWrites?.kind === "draft" &&
             routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
           ) {
+            seedConsultancyPrompt(opened.draftId);
             return opened;
           }
           await router.navigate({
@@ -322,6 +332,7 @@ export function useNewThreadHandler() {
             params: { draftId: emptyStoredDraftThread.draftId },
             replace: options?.replace ?? false,
           });
+          seedConsultancyPrompt(opened.draftId);
           return opened;
         })();
       }
@@ -350,6 +361,7 @@ export function useNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
+        seedConsultancyPrompt(currentRouteTarget.draftId);
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
           threadId: latestActiveDraftThread.threadId,
@@ -398,6 +410,7 @@ export function useNewThreadHandler() {
             params: { draftId: racedDraft.draftId },
             replace: options?.replace ?? false,
           });
+          seedConsultancyPrompt(racedDraft.draftId);
           return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
@@ -427,6 +440,7 @@ export function useNewThreadHandler() {
           params: { draftId },
           replace: options?.replace ?? false,
         });
+        seedConsultancyPrompt(draftId);
         return { draftId, threadId };
       })();
     },

@@ -46,6 +46,9 @@ describe("workspace file previews", () => {
     expect(isWorkspaceAudioPreviewPath("recording.wav.ts")).toBe(false);
     expect(hostPreviewMimeTypeFromExtension(".m4a")).toBe("audio/mp4");
     expect(hostPreviewMimeTypeFromExtension(".mp4")).toBe("video/mp4");
+    expect(hostPreviewMimeTypeFromExtension(".xlsx")).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
     expect(hostPreviewMimeTypeFromExtension(".txt")).toBeNull();
   });
 });

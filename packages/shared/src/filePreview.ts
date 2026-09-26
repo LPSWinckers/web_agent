@@ -134,6 +134,9 @@ export function hostPreviewMimeTypeFromExtension(extension: string): string | nu
   return (
     mediaMimeTypeFromExtension(extension) ??
     audioMimeTypeFromExtension(extension) ??
+    (extension.toLowerCase() === ".xlsx"
+      ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      : null) ??
     BROWSER_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
     null
   );
@@ -194,5 +197,9 @@ export function isWorkspaceAudioPreviewPath(path: string): boolean {
 }
 
 export function isWorkspacePreviewEntryPath(path: string): boolean {
-  return isWorkspaceBrowserPreviewPath(path) || isWorkspaceImagePreviewPath(path);
+  return (
+    isWorkspaceBrowserPreviewPath(path) ||
+    isWorkspaceImagePreviewPath(path) ||
+    hasPreviewExtension(path, [".xlsx"])
+  );
 }

@@ -1,11 +1,5 @@
 import { Spinner } from "~/components/ui/spinner";
-import type {
-  ChatFileAttachment,
-  EditorId,
-  EnvironmentId,
-  ResolvedKeybindingsConfig,
-  ScopedThreadRef,
-} from "@t3tools/contracts";
+import type { ChatFileAttachment, EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import {
   isWorkspaceAudioPreviewPath,
@@ -27,10 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
 import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
-import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
-import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
@@ -45,12 +37,13 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { buildFileReviewComment } from "~/reviewCommentContext";
 import { assetEnvironment } from "~/state/assets";
-import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "~/state/environments";
+import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
+import { SpreadsheetFileViewer } from "~/components/workbench/SpreadsheetFileViewer";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
@@ -99,8 +92,6 @@ interface FilePreviewPanelProps {
   attachment?: ChatFileAttachment;
   threadRef: ScopedThreadRef;
   composerDraftTarget: ScopedThreadRef | DraftId;
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
   revealLine: number | null;
   revealRequestId: number;
   onOpenFile: (relativePath: string) => void;
@@ -225,6 +216,58 @@ function WorkspaceBrowserPreview(props: {
       pdf={isPdfPreviewFile(props.absolutePath)}
     />
   );
+}
+
+function WorkspaceSpreadsheetPreview(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
+  readonly name: string;
+  readonly workspaceMutationId: string | null;
+}) {
+  const insideWorkspace =
+    mediaFileReference(props.absolutePath, props.workspaceRoot).relativePath !== undefined;
+  const resource = useMemo(
+    () => ({
+      _tag: insideWorkspace ? ("workspace-file" as const) : ("media-file" as const),
+      threadId: props.threadRef.threadId,
+      path: props.absolutePath,
+    }),
+    [insideWorkspace, props.threadRef.threadId, props.absolutePath],
+  );
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+  const revisionSuffix =
+    props.workspaceMutationId === null
+      ? ""
+      : `${assetUrl._tag === "Success" && assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
+  const url = assetUrl._tag === "Success" ? `${assetUrl.url}${revisionSuffix}` : null;
+  const [loaded, setLoaded] = useState<{ url: string; file: File } | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (url === null) return;
+    const controller = new AbortController();
+    void fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load spreadsheet.");
+        const file = new globalThis.File([await response.blob()], props.name);
+        if (!controller.signal.aborted) {
+          setLoaded({ url, file });
+          setError(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError(true);
+      });
+    return () => controller.abort();
+  }, [url, props.name]);
+
+  if (assetUrl._tag === "Failure" || error) {
+    return <FileSurfaceFailure message="Unable to load spreadsheet." />;
+  }
+  if (url === null || loaded?.url !== url) return <FileSurfaceLoading />;
+  return <SpreadsheetFileViewer key={url} file={loaded.file} inline />;
 }
 
 function WorkspaceVideoPreview(props: {
@@ -911,8 +954,6 @@ export default function FilePreviewPanel({
   attachment,
   threadRef,
   composerDraftTarget,
-  keybindings,
-  availableEditors,
   revealLine,
   revealRequestId,
   onOpenFile,
@@ -922,8 +963,6 @@ export default function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const remoteOpenState = useRemoteOpenState(environmentId);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
@@ -937,6 +976,7 @@ export default function FilePreviewPanel({
   const isMedia = isImage || isVideo || isAudio;
   // PDFs have no text to show; HTML has, and can toggle between page and source.
   const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
+  const isSpreadsheet = relativePath !== null && /\.xlsx$/i.test(relativePath);
   const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
   // A file outside the workspace (an absolute path) is shown, never edited.
   const isHostFile =
@@ -1011,7 +1051,8 @@ export default function FilePreviewPanel({
     file.data !== null &&
     !(isMarkdown && renderMarkdown) &&
     !(tableDelimiter && renderTable) &&
-    !renderBrowserFile;
+    !renderBrowserFile &&
+    !isSpreadsheet;
   const rendered = isMarkdown ? renderMarkdown : tableDelimiter ? renderTable : renderBrowserFile;
   const setRenderedPreferred = isMarkdown
     ? setRenderMarkdownPreferred
@@ -1108,17 +1149,6 @@ export default function FilePreviewPanel({
               />
             </div>
           </ScrollArea>
-          {absolutePath &&
-          (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec") ? (
-            <OpenInPicker
-              environmentId={environmentId}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              openInCwd={absolutePath}
-              compact
-              enableShortcut={false}
-            />
-          ) : null}
           {canToggleRendered && renderedMode ? (
             <FileSurfaceAction
               label={renderedToggleLabel(renderedMode, rendered)}
@@ -1170,6 +1200,7 @@ export default function FilePreviewPanel({
       {previewPath &&
       attachment === undefined &&
       !isMedia &&
+      !isSpreadsheet &&
       !renderBrowserFile &&
       file.data?.truncated ? (
         <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
@@ -1225,6 +1256,16 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               title={relativePath}
+              workspaceMutationId={workspaceMutationId}
+            />
+          ) : relativePath && isSpreadsheet && absolutePath ? (
+            <WorkspaceSpreadsheetPreview
+              key={absolutePath}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              absolutePath={absolutePath}
+              workspaceRoot={cwd}
+              name={relativePath.split(/[\\/]/).at(-1) ?? relativePath}
               workspaceMutationId={workspaceMutationId}
             />
           ) : relativePath && file.error && file.data === null ? (

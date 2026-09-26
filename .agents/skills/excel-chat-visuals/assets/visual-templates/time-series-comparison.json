@@ -1,0 +1,25 @@
+{
+  "template": "time-series-comparison",
+  "title": "<metric comparison> over time",
+  "subtitle": "<date range and scope>",
+  "chart": "line",
+  "x": {
+    "label": "<period>",
+    "values": ["<period 1>", "<period 2>"]
+  },
+  "y": {
+    "label": "<unit or currency>",
+    "format": "<number, currency, or percent>"
+  },
+  "series": [
+    {
+      "name": "<first measure>",
+      "values": [0, 0]
+    },
+    {
+      "name": "<second measure>",
+      "values": [0, 0]
+    }
+  ],
+  "note": "<aggregation or filtering assumption, if needed>"
+}

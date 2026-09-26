@@ -1,0 +1,12 @@
+{
+  "template": "summary-table",
+  "title": "<summary title>",
+  "scope": "<filters, date range, or grouping>",
+  "columns": ["<category>", "<measure>", "<unit>"],
+  "rows": [
+    ["<category 1>", 0, "<unit>"],
+    ["<category 2>", 0, "<unit>"]
+  ],
+  "sort": "<sorting rule>",
+  "note": "<calculation or missing-data note, if needed>"
+}

@@ -23,6 +23,7 @@ import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
+import { isConsultancyInternalPath } from "~/components/consultancy/consultancyData";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useDirectoryEntries } from "./useDirectoryEntries";
@@ -117,21 +118,26 @@ export default function FileBrowserPanel({
   } = useDirectoryEntries(environmentId, cwd);
   const [query, setQuery] = useState("");
   const [expandAll, setExpandAll] = useState(false);
+  const hideConsultancyFiles = projectName.includes(" / ");
   const pathSearch = useProjectPathSearch({ environmentId, cwd, query: query.slice(0, 256) }, 200);
   const entries = useMemo(() => {
-    const result = new Map(directoryEntries.map((entry) => [entry.path, entry]));
+    const visible = (path: string) => !hideConsultancyFiles || !isConsultancyInternalPath(path);
+    const result = new Map(
+      directoryEntries.filter((entry) => visible(entry.path)).map((entry) => [entry.path, entry]),
+    );
     if (query.trim() && !pathSearch.isPending) {
       for (const entry of pathSearch.entries) {
+        if (!visible(entry.path)) continue;
         if (!result.has(entry.path)) result.set(entry.path, entry);
         const segments = entry.path.split("/");
         for (let index = 1; index < segments.length; index++) {
           const path = segments.slice(0, index).join("/");
-          if (!result.has(path)) result.set(path, { path, kind: "directory" });
+          if (visible(path) && !result.has(path)) result.set(path, { path, kind: "directory" });
         }
       }
     }
     return [...result.values()];
-  }, [directoryEntries, pathSearch.entries, pathSearch.isPending, query]);
+  }, [directoryEntries, hideConsultancyFiles, pathSearch.entries, pathSearch.isPending, query]);
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
