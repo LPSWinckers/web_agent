@@ -1,10 +1,11 @@
 # Resource telemetry
 
 Process counters come from a [standalone Rust monitor](../../native/resource-monitor/src/main.rs)
-using `sysinfo`. Electron main supplies host power and Electron process metrics.
-Keeping native collection outside Node isolates collector crashes and avoids a
-Node/Electron addon ABI matrix. Desktop and CLI servers use the same child-process
-protocol. A missing or failed collector leaves the server running.
+using `sysinfo`. Servers launched by legacy desktop builds can also receive host
+power and Electron process metrics. Native collection stays outside Node, which
+isolates collector crashes and avoids a native addon ABI matrix. CLI servers use
+the same child-process protocol. A missing or failed collector leaves the server
+running.
 
 ## Collection cost
 
@@ -19,7 +20,7 @@ Large process trees therefore shorten the available history window. Linux task
 enumeration is disabled because walking every `/proc/<pid>/task/<tid>` directory
 makes sampling itself expensive.
 
-Electron power updates travel over private inherited pipes, independent of the
+Legacy Electron power updates travel over private inherited pipes, independent of the
 renderer connection. Power events and slow heartbeats continue with diagnostics
 closed; `app.getAppMetrics()` runs only on live demand. The receiver's stale deadline
 must exceed the slowest configured heartbeat plus scheduling grace, or intentional
@@ -44,7 +45,7 @@ unconstrained states. Headless servers leave unavailable power data unknown.
 - Historical replay uses native samples without current Electron CPU or memory
   metrics. Merging the latest Electron values would overwrite the past.
 
-A WSL backend needs a Linux monitor even though Electron runs on Windows. Windows
-desktop packages currently supply only the Windows executable, so native process
-telemetry for the WSL backend is unavailable. The inherited Electron power feed
-still works.
+A WSL backend needs a Linux monitor even when its legacy desktop host runs on
+Windows. Those older Windows packages supply only the Windows executable, so
+native process telemetry for the WSL backend is unavailable. The inherited power
+feed still works.

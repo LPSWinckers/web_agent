@@ -74,6 +74,7 @@ const PREVIEW_ASSET_EXTENSIONS = new Set([
   ...WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   ...WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
   ".xlsx",
+  ".docx",
   ".css",
   ".js",
   ".mjs",

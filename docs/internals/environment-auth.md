@@ -30,18 +30,11 @@ authenticate the upgrade with their cookie. A successful handshake grants no
 extra authority: [every RPC declares a required
 scope](../../apps/server/src/auth/RpcAuthorization.ts).
 
-Desktop restarts forget the previous local bearer token, so its reusable
-bootstrap grant replaces earlier sessions for the same subject and method.
-Revocation and insertion share a [database
-transaction](../../apps/server/src/persistence/AuthSessions.ts); a failed
-replacement must leave the old credential usable. Pairing and browser sessions
-do not follow this replacement rule.
-
 ### Reusable dev credential
 
 Web development environments can accept one `T3CODE_DEV_AUTH_TOKEN` across
 worktrees and ports on one hostname. The token and startup URLs that contain it
-grant administrative access. Desktop and non-development servers ignore it. See
+grant administrative access. Production servers ignore it. See
 the [development runbook](../operations/development.md#reusable-dev-credential)
 for setup.
 

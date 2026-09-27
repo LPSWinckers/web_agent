@@ -210,7 +210,7 @@ try {
       "t3: no T3 Code CLI build is available for this platform (" + key + ").",
       "Supported platforms: " + SUPPORTED.join(", ") + ".",
       "If yours is listed, reinstall t3 so npm fetches its optional dependency.",
-      "The desktop app and release archives are at https://github.com/pingdotgg/t3code/releases",
+      "CLI release archives are at https://github.com/pingdotgg/t3code/releases",
       "",
     ].join("\\n"),
   );

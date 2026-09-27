@@ -79,6 +79,7 @@ import type {
   Options as ReactMarkdownOptions,
 } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import { parseConsultancyChartJson } from "@t3tools/shared/consultancyChart";
 import { toHtml } from "hast-util-to-html";
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import { defaultUrlTransform } from "react-markdown";
@@ -197,6 +198,7 @@ import {
 } from "../browser/openFileInPreview";
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
+import { ConsultancyChartView } from "./charts/ConsultancyChartView";
 
 interface ChatMarkdownProps {
   text: string;
@@ -3275,6 +3277,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
     }
 
     const language = extractFenceLanguage(codeBlock.className);
+    if (language === "t3-chart" && !isStreaming && isClosedCodeFence(node, text)) {
+      const chart = parseConsultancyChartJson(codeBlock.code);
+      if (chart) return <ConsultancyChartView chart={chart} />;
+    }
     const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
     return (
       <MarkdownCodeBlock

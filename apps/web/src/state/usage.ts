@@ -13,13 +13,16 @@ import {
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { refreshUsage } from "@t3tools/client-runtime/state/usage";
+import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
 
 import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentProjects } from "./projects";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
 
@@ -56,6 +59,50 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
     }
     return statuses;
   }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
+);
+
+export interface EnvironmentProjectUsageStatus {
+  readonly project: EnvironmentProject;
+  readonly environmentLabel: string;
+  readonly isPending: boolean;
+  readonly error: string | null;
+  readonly summary: UsageSummary | null;
+}
+
+const projectUsageByWindowAtom = Atom.family((selectionKey: string) =>
+  Atom.make((get): readonly EnvironmentProjectUsageStatus[] => {
+    const selection = JSON.parse(selectionKey) as {
+      readonly inputKey: string;
+      readonly environmentIds: readonly EnvironmentId[] | null;
+      readonly enabled: boolean;
+    };
+    if (!selection.enabled) return [];
+
+    const input = JSON.parse(selection.inputKey) as UsageSummaryInput;
+    const presentations = get(environmentPresentations.presentationsAtom);
+    return get(environmentProjects.projectsAtom)
+      .filter(
+        (project) =>
+          selection.environmentIds === null ||
+          selection.environmentIds.includes(project.environmentId),
+      )
+      .map((project) => {
+        const result = get(
+          serverEnvironment.usageSummary({
+            environmentId: project.environmentId,
+            input: { ...input, projectId: project.id },
+          }),
+        );
+        return {
+          project,
+          environmentLabel:
+            presentations.get(project.environmentId)?.entry.target.label ?? project.environmentId,
+          isPending: result.waiting,
+          error: result._tag === "Failure" ? "This project could not report usage." : null,
+          summary: Option.getOrNull(AsyncResult.value(result)),
+        };
+      });
+  }).pipe(Atom.withLabel(`web-usage:projects:${selectionKey}`)),
 );
 
 export interface UsageView {
@@ -148,6 +195,62 @@ export function useUsage(
     selectedEnvironments,
     isPending: answeredCount === 0 && stillReporting > 0,
     isPartial: answeredCount > 0 && stillReporting > 0,
+    refresh,
+  };
+}
+
+export function useProjectUsage(
+  input: UsageSummaryInput,
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null = null,
+  enabled = true,
+) {
+  const inputKey = useMemo(
+    () =>
+      JSON.stringify({
+        sinceDay: input.sinceDay,
+        untilDay: input.untilDay,
+        timeZone: input.timeZone,
+        resolution: input.resolution,
+        sinceTime: input.sinceTime,
+        untilTime: input.untilTime,
+      }),
+    [
+      input.sinceDay,
+      input.untilDay,
+      input.timeZone,
+      input.resolution,
+      input.sinceTime,
+      input.untilTime,
+    ],
+  );
+  const environmentIds = useMemo(
+    () => (selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds].sort()),
+    [selectedEnvironmentIds],
+  );
+  const selectionKey = JSON.stringify({ inputKey, environmentIds, enabled });
+  const projects = useAtomValue(projectUsageByWindowAtom(selectionKey));
+
+  const refresh = useCallback(
+    async (nextInput?: UsageSummaryInput) => {
+      const summaryInput = nextInput ?? (JSON.parse(inputKey) as UsageSummaryInput);
+      await Promise.all(
+        projects.map(async ({ project }) => {
+          const query = serverEnvironment.usageSummary({
+            environmentId: project.environmentId,
+            input: { ...summaryInput, projectId: project.id },
+          });
+          appAtomRegistry.refresh(query);
+          await executeAtomQuery(appAtomRegistry, query, { reportFailure: false });
+        }),
+      );
+    },
+    [inputKey, projects],
+  );
+
+  return {
+    projects,
+    isPending: projects.some((project) => project.isPending),
+    failedCount: projects.filter((project) => project.error !== null).length,
     refresh,
   };
 }

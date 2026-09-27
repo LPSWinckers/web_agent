@@ -2,8 +2,7 @@
 
 Proposed invariant: a command's visible label, tooltip, menu wording and accessible
 name describe the same action on the same object. An icon-only presentation must
-retain that meaning. This applies to shared web/Electron controls and corresponding
-React Native iOS/Android actions, wherever those actions are available.
+retain that meaning in the web client.
 
 Separate strings can drift while each presentation still looks plausible. A message
 copy action called “Copy link” promises a different clipboard payload to someone
@@ -18,8 +17,8 @@ application compliance.
 
 ## Boundaries
 
-Native menus and assistive technologies may use different wording or omit a tooltip.
-Labels need semantic agreement, not identical strings across platforms. A contextual
+Browser menus and assistive technologies may use different wording or omit a tooltip.
+Labels need semantic agreement, not identical strings. A contextual
 “Copy” is sufficient when its target is unambiguous; do not globally expand it.
 Temporary “Copied” feedback may replace an action label without implying a different
 target. Clipboard transport, success timing and error reporting are separate concerns.

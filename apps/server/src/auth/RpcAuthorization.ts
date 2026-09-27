@@ -1,6 +1,7 @@
 import {
   type DeviceListInput,
   AuthAccessReadScope,
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -9,6 +10,7 @@ import {
   AuthTerminalOperateScope,
   ORCHESTRATION_WS_METHODS,
   type AuthEnvironmentScope,
+  type ServerSettingsPatch,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -188,3 +190,6 @@ export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironm
   input.retryHostId || input.updateTool
     ? AuthOrchestrationOperateScope
     : AuthOrchestrationReadScope;
+
+export const requiredScopeForSettingsPatch = (patch: ServerSettingsPatch): AuthEnvironmentScope =>
+  patch.companyLibrary === undefined ? AuthOrchestrationOperateScope : AuthAccessWriteScope;

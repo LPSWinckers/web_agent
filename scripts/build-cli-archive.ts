@@ -34,12 +34,6 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
-import {
-  createStagePatchedDependencies,
-  createStageWorkspaceConfig,
-  resolveFffNativeDependencies,
-  STAGE_INSTALL_ARGS,
-} from "./build-desktop-artifact.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
@@ -105,6 +99,58 @@ export function cliArchiveFileName(version: string, platform: BuildPlatform, arc
   // gzip rather than xz: GNU tar needs an external xz binary for -J, which
   // minimal hosts lack, while every tar (and Node's zlib) handles gzip alone.
   return `${cliArchiveStem(version, platform, arch)}.${platform === "win" ? "zip" : "tar.gz"}`;
+}
+
+const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
+
+function resolveFffNativeDependencies(
+  platform: BuildPlatform,
+  arch: BuildArch,
+  version: string,
+): Record<string, string> {
+  const nodePlatform = platform === "mac" ? "darwin" : platform === "win" ? "win32" : "linux";
+  if (platform === "linux") {
+    return Object.fromEntries(
+      ["gnu", "musl"].map((libc) => [`@ff-labs/fff-bin-${nodePlatform}-${arch}-${libc}`, version]),
+    );
+  }
+  return { [`@ff-labs/fff-bin-${nodePlatform}-${arch}`]: version };
+}
+
+function createStageWorkspaceConfig(input: {
+  readonly platform: BuildPlatform;
+  readonly arch: BuildArch;
+  readonly allowBuilds?: Record<string, boolean>;
+  readonly patchedDependencies?: Record<string, string>;
+  readonly overrides?: Record<string, string>;
+}) {
+  const hostOs = input.platform === "mac" ? "darwin" : input.platform === "win" ? "win32" : "linux";
+  const { allowBuilds, patchedDependencies, overrides } = input;
+  return {
+    supportedArchitectures: {
+      os: [hostOs],
+      cpu: [input.arch],
+      ...(input.platform === "linux" ? { libc: ["glibc"] } : {}),
+    },
+    ...(allowBuilds && Object.keys(allowBuilds).length > 0 ? { allowBuilds } : {}),
+    ...(patchedDependencies && Object.keys(patchedDependencies).length > 0
+      ? { patchedDependencies }
+      : {}),
+    ...(overrides && Object.keys(overrides).length > 0 ? { overrides } : {}),
+  };
+}
+
+function createStagePatchedDependencies(
+  patchedDependencies: Record<string, string>,
+  dependencies: Record<string, unknown>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(patchedDependencies).filter(([patchKey]) => {
+      const versionSeparator = patchKey.lastIndexOf("@");
+      const packageName = versionSeparator > 0 ? patchKey.slice(0, versionSeparator) : patchKey;
+      return Object.hasOwn(dependencies, packageName);
+    }),
+  );
 }
 
 /** The bsdtar Windows ships in System32; resolves regardless of which tar is first on PATH. */
@@ -434,7 +480,7 @@ const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
     return;
   }
   yield* stripStaleAuthenticodeEntry(executablePath);
-  // Mirrors electron-builder's invocation for the installer: every value
+  // Mirrors the CLI installer invocation: every value
   // single-quoted, the file path in Windows form. `$ErrorActionPreference`
   // makes a signing failure inside the cmdlet surface as a non-zero exit.
   const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;

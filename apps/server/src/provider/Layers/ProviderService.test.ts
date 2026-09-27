@@ -1673,10 +1673,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
       yield* provider.sendTurn({
         threadId: session.threadId,
         input: "hello",
+        agentContext: "Open Word document: word/Brief.docx",
         attachments: [],
         modelSelection,
       });
       assert.equal(routing.codex.sendTurn.mock.calls.length, 1);
+      assert.match(
+        routing.codex.sendTurn.mock.calls[0]![0].input ?? "",
+        /hello\n\nOpen Word document: word\/Brief\.docx/,
+      );
 
       yield* provider.interruptTurn({ threadId: session.threadId });
       assert.deepEqual(routing.codex.interruptTurn.mock.calls, [[session.threadId, undefined]]);
@@ -4965,6 +4970,7 @@ describe("agent browser access", () => {
         getImportedAgentSessionSources: () => Effect.die("unused"),
         getUserInputActivity: () => Effect.die("unused"),
         listActivitiesByKind: () => Effect.die("unused"),
+        listProjectUsageActivities: () => Effect.die("unused"),
         getCommandReadModel: () => Effect.die("unused"),
         getSnapshot: () => Effect.die("unused"),
         getShellSnapshot: () => Effect.die("unused"),

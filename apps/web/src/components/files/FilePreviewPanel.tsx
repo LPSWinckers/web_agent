@@ -41,15 +41,20 @@ import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import { useComposerHandleContext } from "~/composerHandleContext";
+import { useThreadShell } from "~/state/entities";
 
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import { SpreadsheetFileViewer } from "~/components/workbench/SpreadsheetFileViewer";
+import { workbookBase64 } from "~/components/workbench/workbookBase64";
+import { projectEnvironment } from "~/state/projects";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import FileBrowserPanel from "./FileBrowserPanel";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
+import { PresentationDeckPreview } from "./PresentationMaker";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -95,6 +100,7 @@ interface FilePreviewPanelProps {
   revealLine: number | null;
   revealRequestId: number;
   onOpenFile: (relativePath: string) => void;
+  onAskAi: (prompt: string) => boolean;
   onPendingChange: (relativePath: string, pending: boolean) => void;
   selectedFilePending: boolean;
   workspaceMutationId: string | null;
@@ -224,8 +230,11 @@ function WorkspaceSpreadsheetPreview(props: {
   readonly absolutePath: string;
   readonly workspaceRoot: string;
   readonly name: string;
+  readonly relativePath: string;
   readonly workspaceMutationId: string | null;
+  readonly onAskAi: (prompt: string) => boolean;
 }) {
+  const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const insideWorkspace =
     mediaFileReference(props.absolutePath, props.workspaceRoot).relativePath !== undefined;
   const resource = useMemo(
@@ -267,7 +276,30 @@ function WorkspaceSpreadsheetPreview(props: {
     return <FileSurfaceFailure message="Unable to load spreadsheet." />;
   }
   if (url === null || loaded?.url !== url) return <FileSurfaceLoading />;
-  return <SpreadsheetFileViewer key={url} file={loaded.file} inline />;
+  return (
+    <SpreadsheetFileViewer
+      file={loaded.file}
+      inline
+      onAskAi={props.onAskAi}
+      {...(insideWorkspace ? { sourcePath: props.absolutePath } : {})}
+      {...(insideWorkspace
+        ? {
+            onSave: async (data: ArrayBuffer) => {
+              const result = await writeFile({
+                environmentId: props.environmentId,
+                input: {
+                  cwd: props.workspaceRoot,
+                  relativePath: props.relativePath,
+                  contents: workbookBase64(data),
+                  encoding: "base64",
+                },
+              });
+              if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+            },
+          }
+        : {})}
+    />
+  );
 }
 
 function WorkspaceVideoPreview(props: {
@@ -957,10 +989,13 @@ export default function FilePreviewPanel({
   revealLine,
   revealRequestId,
   onOpenFile,
+  onAskAi,
   onPendingChange,
   selectedFilePending,
   workspaceMutationId,
 }: FilePreviewPanelProps) {
+  const composerRef = useComposerHandleContext();
+  const projectId = useThreadShell(threadRef)?.projectId;
   const { resolvedTheme } = useTheme();
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
@@ -986,6 +1021,21 @@ export default function FilePreviewPanel({
   // folder from the read failure, and the server stats before reading, so a folder
   // costs an open and a stat and returns no body.
   const file = useProjectFileQuery(environmentId, cwd, relativePath, attachment === undefined);
+  const presentationSourcePath = relativePath?.toLowerCase().endsWith(".pptx")
+    ? `${relativePath.slice(0, -5)}.t3deck.json`
+    : null;
+  const presentationSource = useProjectFileQuery(
+    environmentId,
+    cwd,
+    presentationSourcePath,
+    attachment === undefined && presentationSourcePath !== null,
+  );
+  useWorkspaceMutationRefresh({
+    enabled: presentationSourcePath !== null && !selectedFilePending,
+    mutationId: workspaceMutationId,
+    refresh: presentationSource.refresh,
+    resourceKey: `presentation:${environmentId}:${cwd}:${presentationSourcePath ?? ""}`,
+  });
   // A chat link cannot tell a folder from a file, so a folder arrives here as
   // a file surface and the read fails. Keep the breadcrumbs, drop the preview
   // pane, and let the tree fill the surface with the folder revealed. Mutation
@@ -1266,7 +1316,22 @@ export default function FilePreviewPanel({
               absolutePath={absolutePath}
               workspaceRoot={cwd}
               name={relativePath.split(/[\\/]/).at(-1) ?? relativePath}
+              relativePath={relativePath}
               workspaceMutationId={workspaceMutationId}
+              onAskAi={onAskAi}
+            />
+          ) : presentationSourcePath && presentationSource.data ? (
+            <PresentationDeckPreview
+              key={presentationSourcePath}
+              contents={presentationSource.data.contents}
+              name={presentationSourcePath}
+              environmentId={environmentId}
+              cwd={cwd}
+              {...(projectId ? { projectId } : {})}
+              onAskAi={(prompt) =>
+                composerRef?.current?.insertTextAtEnd(prompt, { ensureLeadingBoundary: true }) ??
+                false
+              }
             />
           ) : relativePath && file.error && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
@@ -1276,6 +1341,19 @@ export default function FilePreviewPanel({
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
               <Spinner size="lg" />
             </div>
+          ) : relativePath && file.data && relativePath.endsWith(".t3deck.json") ? (
+            <PresentationDeckPreview
+              key={relativePath}
+              contents={file.data.contents}
+              name={relativePath}
+              environmentId={environmentId}
+              cwd={cwd}
+              {...(projectId ? { projectId } : {})}
+              onAskAi={(prompt) =>
+                composerRef?.current?.insertTextAtEnd(prompt, { ensureLeadingBoundary: true }) ??
+                false
+              }
+            />
           ) : relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
               // Markdown reconciles in place across text updates, so a file

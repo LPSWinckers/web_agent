@@ -92,6 +92,10 @@ export interface ProjectionSnapshotQueryShape {
     kind: string,
   ) => Effect.Effect<ReadonlyArray<OrchestrationThreadActivity>, ProjectionRepositoryError>;
 
+  readonly listProjectUsageActivities: (
+    projectId: ProjectId,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationThreadActivity>, ProjectionRepositoryError>;
+
   /**
    * Read the lightweight command snapshot used to bootstrap the in-memory
    * orchestration engine without hydrating message/activity/checkpoint bodies.

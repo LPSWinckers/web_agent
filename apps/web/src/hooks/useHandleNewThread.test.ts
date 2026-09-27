@@ -16,6 +16,7 @@ const testState = vi.hoisted(() => {
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
+  let projectTitle: string | undefined;
   const router = {
     state: {
       location: { href: "/" },
@@ -26,7 +27,7 @@ const testState = vi.hoisted(() => {
     }),
   };
   const draftStore = {
-    getComposerDraft: vi.fn(() => ({})),
+    getComposerDraft: vi.fn(() => ({ prompt: "" })),
     getDraftSessionByLogicalProjectKey: vi.fn(() => storedDraft),
     getDraftSession: vi.fn(() => null),
     getDraftThread: vi.fn(() => null),
@@ -34,6 +35,7 @@ const testState = vi.hoisted(() => {
     setDraftThreadContext: vi.fn(),
     setLogicalProjectDraftThreadId: vi.fn(),
     setModelSelection: vi.fn(),
+    setPrompt: vi.fn(),
   };
 
   return {
@@ -45,6 +47,12 @@ const testState = vi.hoisted(() => {
     get targetSettings() {
       return targetSettings;
     },
+    get projectTitle() {
+      return projectTitle;
+    },
+    setProjectTitle(title: string) {
+      projectTitle = title;
+    },
     reset(
       nextStoredDraft: typeof storedDraft,
       workspaceDefaults = {
@@ -53,6 +61,7 @@ const testState = vi.hoisted(() => {
       },
     ) {
       storedDraft = nextStoredDraft;
+      projectTitle = undefined;
       targetSettings = {
         defaultThreadEnvMode: workspaceDefaults.envMode,
         newWorktreesStartFromOrigin: workspaceDefaults.startFromOrigin,
@@ -63,6 +72,7 @@ const testState = vi.hoisted(() => {
       router.navigate.mockClear();
       draftStore.setDraftThreadContext.mockClear();
       draftStore.setLogicalProjectDraftThreadId.mockClear();
+      draftStore.setPrompt.mockClear();
       projectFileRead = new Promise<null>((resolve) => {
         completeProjectFileRead = resolve;
       });
@@ -161,6 +171,7 @@ vi.mock("../state/entities", () => ({
       id: "project-remote",
       environmentId: "environment-ssh",
       workspaceRoot: "/remote/project",
+      title: testState.projectTitle,
       defaultThreadEnvMode: null,
       defaultModelSelection: null,
     },
@@ -194,6 +205,33 @@ describe.each([
     },
   ],
 ])("useNewThreadHandler with a %s draft", (_, draft) => {
+  it("opens a project chat with an empty visible prompt", async () => {
+    testState.reset(draft);
+    testState.setProjectTitle("Customer / Project");
+    const pendingOpen = useNewThreadHandler()(
+      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+      { navigate: false },
+    );
+    testState.completeProjectFileRead(null);
+    await pendingOpen;
+
+    expect(testState.draftStore.setPrompt).not.toHaveBeenCalled();
+  });
+
+  it("can reserve a thread for an embedded chat without leaving the file", async () => {
+    testState.reset(draft);
+    const pendingOpen = useNewThreadHandler()(
+      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
+      { navigate: false },
+    );
+    testState.completeProjectFileRead(null);
+    const opened = await pendingOpen;
+
+    expect(opened?.threadId).toBeTruthy();
+    expect(testState.router.navigate).not.toHaveBeenCalled();
+    expect(testState.router.state.location.href).toBe("/");
+  });
+
   it.each(["approval-required", "auto-accept-edits", "auto", "full-access"] as const)(
     "uses the target environment's %s permissions for new threads",
     async (runtimeMode) => {

@@ -1,36 +1,83 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import { ChevronLeftIcon, FolderIcon, FileSpreadsheetIcon, FileTextIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
-import { useAssetUrlState } from "~/assets/assetUrls";
+import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { BrowserDocumentFrame } from "~/components/files/BrowserDocumentFrame";
+import { PresentationDeckPreview, PresentationMaker } from "~/components/files/PresentationMaker";
+import { SpreadsheetFileViewer } from "~/components/workbench/SpreadsheetFileViewer";
+import { workbookBase64 } from "~/components/workbench/workbookBase64";
+import {
+  exportWordDocument,
+  newWordDocument,
+  wordDocumentPath,
+} from "~/components/files/wordDocument";
 import { useDirectoryEntries } from "~/components/files/useDirectoryEntries";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
+import {
+  latestWorkspaceMutationId,
+  useWorkspaceMutationRefresh,
+} from "~/hooks/useWorkspaceMutationRefresh";
+import { useThread } from "~/state/entities";
 import { projectEnvironment } from "~/state/projects";
 import { useEnvironmentQuery } from "~/state/query";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
-import { extractDocumentContext } from "./documentContext";
 import { isConsultancyInternalPath } from "./consultancyData";
 
 const SPREADSHEET = /\.(xlsx|csv|tsv)$/i;
 const MARKDOWN = /\.md$/i;
 const TEXT = /\.(md|txt|json|xml|html|csv|tsv)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
+const WordDocumentEditor = lazy(() =>
+  import("~/components/files/WordDocumentEditor").then((module) => ({
+    default: module.WordDocumentEditor,
+  })),
+);
 
-function FilePreview({
+export function ConsultancyFileViewer({
   environmentId,
   cwd,
   path,
-  onOpenWorkbook,
+  active = true,
+  onAskAi,
+  onAskSpreadsheet,
+  projectId,
+  onDirtyChange,
+  spreadsheetChat,
+  spreadsheetThreadRef,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
   path: string;
-  onOpenWorkbook: (file: File) => void;
+  active?: boolean;
+  onAskAi: (prompt: string) => boolean;
+  onAskSpreadsheet: (
+    question: string,
+    agentContext: string,
+    path?: string,
+  ) => boolean | Promise<boolean>;
+  projectId: ProjectId;
+  onDirtyChange?: (dirty: boolean) => void;
+  spreadsheetChat?: ReactNode;
+  spreadsheetThreadRef?: ScopedThreadRef | undefined;
 }) {
   const name = path.split("/").at(-1) ?? path;
   const isText = TEXT.test(path) && !SPREADSHEET.test(path);
+  const presentationSourcePath = /\.pptx$/i.test(path) ? `${path.slice(0, -5)}.t3deck.json` : null;
+  const presentationSource = useEnvironmentQuery(
+    presentationSourcePath
+      ? projectEnvironment.readFile({
+          environmentId,
+          input: { cwd, relativePath: presentationSourcePath },
+        })
+      : null,
+  );
   const textQuery = useEnvironmentQuery(
     isText
       ? projectEnvironment.readFile({
@@ -44,38 +91,126 @@ function FilePreview({
     [cwd, path],
   );
   const asset = useAssetUrlState(environmentId, isText ? null : resource);
+  const refreshAssetUrl = useAssetUrlRefresh(environmentId, isText ? null : resource);
   const assetUrl = asset._tag === "Success" ? asset.url : null;
-  const [document, setDocument] = useState<{ path: string; text: string } | null>(null);
+  const [workbook, setWorkbook] = useState<File | null>(null);
+  const workbookRef = useRef<File | null>(null);
+  const wasActiveRef = useRef(active);
   const [loadError, setLoadError] = useState("");
+  const [workbookDirty, setWorkbookDirty] = useState(false);
+  const writeSpreadsheet = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const spreadsheetThread = useThread(spreadsheetThreadRef ?? null);
+  const mutationId = latestWorkspaceMutationId(spreadsheetThread?.activities ?? []);
+
+  useWorkspaceMutationRefresh({
+    enabled: active && !workbookDirty && SPREADSHEET.test(path),
+    mutationId,
+    resourceKey: `spreadsheet:${environmentId}:${cwd}:${path}`,
+    refresh: () => {
+      void refreshAssetUrl()
+        .then(async (url) => {
+          if (!url) throw new Error("Could not refresh this workbook.");
+          const response = await fetch(url, { cache: "no-store" });
+          if (!response.ok) throw new Error("Could not refresh this workbook.");
+          const file = new File([await response.blob()], name);
+          workbookRef.current = file;
+          setWorkbook(file);
+          setLoadError("");
+        })
+        .catch((cause) =>
+          setLoadError(cause instanceof Error ? cause.message : "Could not refresh this workbook."),
+        );
+    },
+  });
 
   useEffect(() => {
-    if (assetUrl === null || (!SPREADSHEET.test(path) && !/\.docx$/i.test(path))) return;
+    if (assetUrl === null || !SPREADSHEET.test(path)) return;
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await fetch(assetUrl, { signal: controller.signal });
+        const response = await fetch(assetUrl, { signal: controller.signal, cache: "no-store" });
         if (!response.ok) throw new Error("Could not open this file.");
         const file = new File([await response.blob()], name);
         if (controller.signal.aborted) return;
-        if (SPREADSHEET.test(path)) {
-          onOpenWorkbook(file);
-        } else {
-          const extracted = await extractDocumentContext(file);
-          if (!controller.signal.aborted) setDocument({ path, text: extracted.text });
-        }
+        workbookRef.current = file;
+        setWorkbook(file);
       } catch (cause) {
         if (!controller.signal.aborted)
           setLoadError(cause instanceof Error ? cause.message : "Could not open this file.");
       }
     })();
     return () => controller.abort();
-  }, [assetUrl, name, onOpenWorkbook, path]);
+  }, [assetUrl, name, path]);
+
+  useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = active;
+    if (wasActive || !active || !workbookRef.current || !SPREADSHEET.test(path)) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const url = await refreshAssetUrl();
+        if (!url || controller.signal.aborted) return;
+        const response = await fetch(url, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error("Could not refresh this workbook.");
+        const file = new File([await response.blob()], name);
+        if (controller.signal.aborted) return;
+        workbookRef.current = file;
+        setWorkbook(file);
+        setLoadError("");
+      } catch (cause) {
+        if (!controller.signal.aborted)
+          setLoadError(cause instanceof Error ? cause.message : "Could not refresh this workbook.");
+      }
+    })();
+    return () => controller.abort();
+  }, [active, name, path, refreshAssetUrl]);
+
+  if (workbook && SPREADSHEET.test(path))
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {loadError ? <p className="p-2 text-sm text-destructive">{loadError}</p> : null}
+        <SpreadsheetFileViewer
+          file={workbook}
+          inline
+          agentChat={spreadsheetChat}
+          onDirtyChange={setWorkbookDirty}
+          onAskAi={(question, agentContext) => onAskSpreadsheet(question, agentContext, path)}
+          sourcePath={`${cwd}/${path}`}
+          onSave={async (data) => {
+            const result = await writeSpreadsheet({
+              environmentId,
+              input: {
+                cwd,
+                relativePath: path,
+                contents: workbookBase64(data),
+                encoding: "base64",
+              },
+            });
+            if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          }}
+        />
+      </div>
+    );
 
   if (isText) {
     if (textQuery.error) return <p className="p-5 text-sm text-destructive">{textQuery.error}</p>;
     if (!textQuery.data) return <p className="p-5 text-sm text-muted-foreground">Opening file…</p>;
+    if (/\.t3deck\.json$/i.test(path))
+      return (
+        <div className="flex h-full min-h-0 flex-col">
+          <PresentationDeckPreview
+            contents={textQuery.data.contents}
+            name={path}
+            environmentId={environmentId}
+            cwd={cwd}
+            onAskAi={onAskAi}
+            projectId={projectId}
+          />
+        </div>
+      );
     return (
-      <div className="max-h-[40rem] overflow-auto p-5">
+      <div className="h-full overflow-auto p-5">
         {textQuery.data.truncated ? (
           <p className="mb-4 text-sm text-muted-foreground">Showing the beginning of this file.</p>
         ) : null}
@@ -90,6 +225,35 @@ function FilePreview({
     );
   }
 
+  if (presentationSourcePath && presentationSource.data)
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <PresentationDeckPreview
+          contents={presentationSource.data.contents}
+          name={presentationSourcePath}
+          environmentId={environmentId}
+          cwd={cwd}
+          onAskAi={onAskAi}
+          projectId={projectId}
+        />
+      </div>
+    );
+
+  if (/\.docx$/i.test(path))
+    return (
+      <Suspense fallback={<p className="p-5 text-sm text-muted-foreground">Opening document…</p>}>
+        <WordDocumentEditor
+          environmentId={environmentId}
+          cwd={cwd}
+          path={path}
+          projectId={projectId}
+          assetUrl={assetUrl}
+          assetError={asset._tag === "Failure"}
+          onDirtyChange={onDirtyChange}
+        />
+      </Suspense>
+    );
+
   if (asset._tag === "Failure" || loadError)
     return (
       <p className="p-5 text-sm text-destructive">{loadError || "Could not open this file."}</p>
@@ -98,19 +262,17 @@ function FilePreview({
     return <p className="p-5 text-sm text-muted-foreground">Opening file…</p>;
   if (/\.pdf$/i.test(path))
     return (
-      <div className="flex h-[40rem] min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <BrowserDocumentFrame src={asset.url} title={name} pdf />
       </div>
     );
   if (IMAGE.test(path))
-    return <img src={asset.url} alt={name} className="mx-auto max-h-[40rem] max-w-full p-5" />;
-  if (/\.docx$/i.test(path))
-    return document?.path === path ? (
-      <pre className="max-h-[40rem] overflow-auto whitespace-pre-wrap break-words p-5 font-sans text-sm leading-relaxed">
-        {document.text}
-      </pre>
-    ) : (
-      <p className="p-5 text-sm text-muted-foreground">Opening document…</p>
+    return (
+      <img
+        src={asset.url}
+        alt={name}
+        className="mx-auto max-h-full max-w-full object-contain p-5"
+      />
     );
   if (SPREADSHEET.test(path))
     return <p className="p-5 text-sm text-muted-foreground">Opening workbook…</p>;
@@ -127,34 +289,225 @@ function FilePreview({
 export function ConsultancyProjectFiles({
   environmentId,
   cwd,
-  onOpenWorkbook,
+  onOpenFile,
+  onAskAi,
+  projectId,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
-  onOpenWorkbook: (file: File) => void;
+  onOpenFile: (path: string) => void;
+  onAskAi: (prompt: string) => boolean;
+  onAskSpreadsheet: (
+    question: string,
+    agentContext: string,
+    path?: string,
+  ) => boolean | Promise<boolean>;
+  projectId: ProjectId;
 }) {
   const { entries, load, refresh, ready, error, isPending } = useDirectoryEntries(
     environmentId,
     cwd,
   );
   const [folder, setFolder] = useState("");
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [newWordTitle, setNewWordTitle] = useState<string | null>(null);
+  const [newExcelTitle, setNewExcelTitle] = useState<string | null>(null);
+  const [wordError, setWordError] = useState("");
+  const [excelError, setExcelError] = useState("");
+  const [savingWord, setSavingWord] = useState(false);
+  const [savingExcel, setSavingExcel] = useState(false);
+  const standard = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.companyLibrary.wordStandard,
+  );
+  const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const listEntries = useAtomQueryRunner(projectEnvironment.listEntries, {
+    reportFailure: false,
+    refresh: true,
+  });
   const visibleEntries = entries.filter((entry) => {
     const parent = entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/")));
     return parent === folder && !isConsultancyInternalPath(entry.path);
   });
+  const createWordDocument = async () => {
+    if (!newWordTitle?.trim()) return;
+    setSavingWord(true);
+    setWordError("");
+    try {
+      const path = wordDocumentPath(newWordTitle);
+      const existing = await listEntries({ environmentId, input: { cwd, directoryPath: "word" } });
+      if (existing._tag === "Failure") throw squashAtomCommandFailure(existing);
+      if (existing.value.entries.some((entry) => entry.path.toLowerCase() === path.toLowerCase())) {
+        throw new Error("A Word document with this name already exists.");
+      }
+      const contents = await exportWordDocument(
+        newWordDocument(newWordTitle.trim().replace(/\.docx$/i, ""), "", standard),
+        standard,
+      );
+      const saved = await writeFile({
+        environmentId,
+        input: { cwd, relativePath: path, contents, encoding: "base64" },
+      });
+      if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
+      setNewWordTitle(null);
+      setFolder("word");
+      refresh();
+      void load("word", true);
+      onOpenFile(path);
+    } catch (cause) {
+      setWordError(cause instanceof Error ? cause.message : "Could not create Word document.");
+    } finally {
+      setSavingWord(false);
+    }
+  };
+  const createExcelWorkbook = async () => {
+    const title = newExcelTitle?.trim();
+    if (!title) return;
+    setSavingExcel(true);
+    setExcelError("");
+    try {
+      const name = title.replace(/\.xlsx$/i, "");
+      const safeName = name
+        .replace(/[<>:"/\\|?*]/g, "-")
+        .replace(/\p{Cc}/gu, "-")
+        .slice(0, 90)
+        .replace(/[. ]+$/, "");
+      if (!safeName || safeName === "." || safeName === "..")
+        throw new Error("Give the workbook a valid name.");
+      const path = `excel/${safeName}.xlsx`;
+      const existing = await listEntries({ environmentId, input: { cwd, directoryPath: "excel" } });
+      if (existing._tag === "Failure") throw squashAtomCommandFailure(existing);
+      if (existing.value.entries.some((entry) => entry.path.toLowerCase() === path.toLowerCase())) {
+        throw new Error("A workbook with this name already exists.");
+      }
+      const ExcelJS = (await import("exceljs")).default;
+      const workbook = new ExcelJS.Workbook();
+      workbook.addWorksheet("Sheet1");
+      const bytes = new Uint8Array(await workbook.xlsx.writeBuffer());
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 8192) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      }
+      const saved = await writeFile({
+        environmentId,
+        input: { cwd, relativePath: path, contents: btoa(binary), encoding: "base64" },
+      });
+      if (saved._tag === "Failure") throw squashAtomCommandFailure(saved);
+      setNewExcelTitle(null);
+      setFolder("excel");
+      refresh();
+      void load("excel", true);
+      onOpenFile(path);
+    } catch (cause) {
+      setExcelError(cause instanceof Error ? cause.message : "Could not create the workbook.");
+    } finally {
+      setSavingExcel(false);
+    }
+  };
 
   return (
     <section className="mt-8">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-medium">Project files</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Open a file to read it here.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Open a file in the project work area.
+          </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={refresh} disabled={isPending}>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setNewExcelTitle("")}>
+            <FileSpreadsheetIcon /> New Excel workbook
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setNewWordTitle("")}>
+            New Word document
+          </Button>
+          <PresentationMaker
+            environmentId={environmentId}
+            cwd={cwd}
+            buttonLabel="New presentation"
+            onOpenInChat={onAskAi}
+            projectId={projectId}
+            onSaved={(path) => {
+              refresh();
+              setFolder("powerpoints");
+              void load("powerpoints");
+              onOpenFile(path);
+            }}
+          />
+          <Button variant="ghost" size="sm" onClick={refresh} disabled={isPending}>
+            Refresh
+          </Button>
+        </div>
       </div>
+      {newExcelTitle !== null ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border p-3">
+          <Input
+            aria-label="New Excel workbook name"
+            placeholder="Workbook name"
+            value={newExcelTitle}
+            onChange={(event) => setNewExcelTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void createExcelWorkbook();
+            }}
+          />
+          <Button
+            size="sm"
+            disabled={!newExcelTitle.trim() || savingExcel}
+            onClick={() => void createExcelWorkbook()}
+          >
+            {savingExcel ? "Creating..." : "Create"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setNewExcelTitle(null);
+              setExcelError("");
+            }}
+          >
+            Cancel
+          </Button>
+          {excelError ? (
+            <p role="alert" className="w-full text-xs text-destructive">
+              {excelError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {newWordTitle !== null ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-border p-3">
+          <Input
+            aria-label="New Word document name"
+            placeholder="Document name"
+            value={newWordTitle}
+            onChange={(event) => setNewWordTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void createWordDocument();
+            }}
+          />
+          <Button
+            size="sm"
+            disabled={!newWordTitle.trim() || savingWord}
+            onClick={() => void createWordDocument()}
+          >
+            {savingWord ? "Creating…" : "Create"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setNewWordTitle(null);
+              setWordError("");
+            }}
+          >
+            Cancel
+          </Button>
+          {wordError ? (
+            <p role="alert" className="w-full text-xs text-destructive">
+              {wordError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
         {folder ? (
           <button
@@ -162,7 +515,6 @@ export function ConsultancyProjectFiles({
             className="flex w-full items-center gap-2 border-b border-border px-4 py-3 text-left text-sm hover:bg-muted/50"
             onClick={() => {
               setFolder(folder.slice(0, Math.max(0, folder.lastIndexOf("/"))));
-              setSelectedPath(null);
             }}
           >
             <ChevronLeftIcon className="size-4" /> Back
@@ -173,14 +525,12 @@ export function ConsultancyProjectFiles({
             key={entry.path}
             type="button"
             className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left text-sm last:border-b-0 hover:bg-muted/50"
-            aria-pressed={entry.kind === "file" && selectedPath === entry.path}
             onClick={() => {
               if (entry.kind === "directory") {
                 setFolder(entry.path);
-                setSelectedPath(null);
                 void load(entry.path);
               } else {
-                setSelectedPath(entry.path);
+                onOpenFile(entry.path);
               }
             }}
           >
@@ -202,20 +552,6 @@ export function ConsultancyProjectFiles({
           <p className="p-5 text-sm text-muted-foreground">Loading files…</p>
         ) : null}
       </div>
-      {selectedPath ? (
-        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
-          <div className="border-b border-border px-5 py-3 text-sm font-medium">
-            {selectedPath.split("/").at(-1)}
-          </div>
-          <FilePreview
-            key={selectedPath}
-            environmentId={environmentId}
-            cwd={cwd}
-            path={selectedPath}
-            onOpenWorkbook={onOpenWorkbook}
-          />
-        </div>
-      ) : null}
     </section>
   );
 }

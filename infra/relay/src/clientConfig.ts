@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - one sha256 over two strings; Effect.Crypto is async and the digest feeds a synchronous Output.map.
+// @effect-diagnostics nodeBuiltinImport:off - one sha256 over a secret token; Effect.Crypto is async and the digest feeds a synchronous Output.map.
 import * as NodeCrypto from "node:crypto";
 
 import * as Alchemy from "alchemy";
@@ -11,20 +11,17 @@ import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-/** The relay outputs a client (web, desktop, mobile) needs at build time. */
+/** The relay outputs the web client needs at build time. */
 export interface RelayClientConfig {
   /** Alchemy types this as optional for workers reachable at no URL; ours always has one. */
   readonly url: string | undefined;
-  readonly mobileTracingUrl: string;
-  readonly mobileTracingDataset: string;
-  readonly mobileTracingToken: Redacted.Redacted<string>;
   readonly clientTracingUrl: string;
   readonly clientTracingDataset: string;
   readonly clientTracingToken: Redacted.Redacted<string>;
   /**
    * Alchemy decides whether an Action runs by hashing `JSON.stringify` of its
    * input, and a Redacted stringifies as `<redacted>`, so a rotated token
-   * alone would never re-run it. A digest of both tokens makes the input
+   * alone would never re-run it. A digest of the token makes the input
    * change with them without persisting the secrets in the hash.
    */
   readonly tokenDigest: string;
@@ -42,9 +39,6 @@ export class RelayUrlUnavailableError extends Schema.TaggedError<RelayUrlUnavail
 export const relayClientConfigEnv = (config: RelayClientConfig & { readonly url: string }) =>
   ({
     T3CODE_RELAY_URL: config.url,
-    T3CODE_MOBILE_OTLP_TRACES_URL: config.mobileTracingUrl,
-    T3CODE_MOBILE_OTLP_TRACES_DATASET: config.mobileTracingDataset,
-    T3CODE_MOBILE_OTLP_TRACES_TOKEN: Redacted.value(config.mobileTracingToken),
     T3CODE_RELAY_CLIENT_OTLP_TRACES_URL: config.clientTracingUrl,
     T3CODE_RELAY_CLIENT_OTLP_TRACES_DATASET: config.clientTracingDataset,
     T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN: Redacted.value(config.clientTracingToken),
@@ -110,7 +104,7 @@ const closesQuote = (value: string, quote: string): boolean =>
 
 /**
  * Writes the relay's client configuration into the repo-root `.env` so the
- * web, desktop, and mobile dev servers build against the stage just deployed.
+ * the web app builds against the stage just deployed.
  * An Action rather than post-deploy scripting: it takes the stack outputs as
  * input, so it runs only when one of them changed and is skipped on a no-op
  * deploy. Set `T3CODE_RELAY_CLIENT_CONFIG_ENV` to write elsewhere (CI does).

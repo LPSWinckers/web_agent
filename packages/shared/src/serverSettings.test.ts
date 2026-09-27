@@ -20,6 +20,20 @@ import {
   resolveProjectAutoPull,
 } from "./serverSettings.ts";
 
+it("replaces company records when an admin removes one", () => {
+  const original = {
+    ...DEFAULT_SERVER_SETTINGS,
+    companyLibrary: {
+      ...DEFAULT_SERVER_SETTINGS.companyLibrary,
+      chartTemplates: [{ id: "trend", name: "Trend", instructions: "Use a line chart." }],
+    },
+  };
+  const next = applyServerSettingsPatch(original, {
+    companyLibrary: { ...original.companyLibrary, chartTemplates: [] },
+  });
+  expect(next.companyLibrary.chartTemplates).toEqual([]);
+});
+
 /** Settings after the server has folded legacy per-project fields into `projectSettingsOverrides`. */
 const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 

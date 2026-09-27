@@ -12,7 +12,9 @@ import {
 import {
   ArchiveIcon,
   BlocksIcon,
+  Building2Icon,
   BotIcon,
+  ChartNoAxesColumnIcon,
   createLucideIcon,
   GitBranchIcon,
   HardDriveIcon,
@@ -77,8 +79,10 @@ const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
   "/settings/general": Settings2Icon,
+  "/settings/company": Building2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,
+  "/settings/usage": ChartNoAxesColumnIcon,
   "/settings/keybindings": KeyboardIcon,
   "/settings/snap-shot": SnapShotIcon,
   "/settings/providers": BotIcon,

@@ -126,7 +126,7 @@ download() {
 case "$(uname -s)" in
   Darwin) platform="darwin" ;;
   Linux) platform="linux" ;;
-  *) fail "unsupported operating system $(uname -s); use the desktop app or npm" ;;
+  *) fail "unsupported operating system $(uname -s); use the T3 Code CLI from npm" ;;
 esac
 case "$(uname -m)" in
   arm64 | aarch64) arch="arm64" ;;

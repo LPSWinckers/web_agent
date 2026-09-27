@@ -117,6 +117,10 @@ export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    readonly readProjectSummary: (
+      input: UsageSummaryInput,
+      records: ReadonlyArray<UsageRecord>,
+    ) => Effect.Effect<UsageSummary, UsageReadError>;
     /** Refetches the rate table ahead of its TTL. See `ensureRates`. */
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
@@ -134,6 +138,18 @@ export const layerTest = Layer.succeed(
   UsageService,
   UsageService.of({
     readSummary: (input) =>
+      Effect.succeed({
+        contractVersion: USAGE_CONTRACT_VERSION,
+        readAt: "1970-01-01T00:00:00.000Z",
+        timeZone: input.timeZone,
+        sinceDay: input.sinceDay,
+        untilDay: input.untilDay,
+        buckets: [],
+        sources: [],
+        pricing: EMPTY_PRICING,
+        scanDurationMs: 0,
+      }),
+    readProjectSummary: (input) =>
       Effect.succeed({
         contractVersion: USAGE_CONTRACT_VERSION,
         readAt: "1970-01-01T00:00:00.000Z",
@@ -881,7 +897,66 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates } as const;
+  const readProjectSummary = Effect.fn("UsageService.readProjectSummary")(function* (
+    input: UsageSummaryInput,
+    records: ReadonlyArray<UsageRecord>,
+  ) {
+    if (input.sinceDay > input.untilDay) {
+      return yield* new UsageReadError({
+        reason: "invalidWindow",
+        detail: `sinceDay '${input.sinceDay}' is after untilDay '${input.untilDay}'`,
+      });
+    }
+    let hourlyWindow: { readonly sinceTimeMs: number; readonly untilTimeMs: number } | null = null;
+    if (input.resolution === "hour") {
+      const sinceTime =
+        input.sinceTime === undefined ? Option.none() : DateTime.make(input.sinceTime);
+      const untilTime =
+        input.untilTime === undefined ? Option.none() : DateTime.make(input.untilTime);
+      if (Option.isNone(sinceTime) || Option.isNone(untilTime)) {
+        return yield* new UsageReadError({
+          reason: "invalidWindow",
+          detail: "Hourly usage requires valid sinceTime and untilTime instants",
+        });
+      }
+      const sinceTimeMs = DateTime.toEpochMillis(sinceTime.value);
+      const untilTimeMs = DateTime.toEpochMillis(untilTime.value);
+      const durationMs = untilTimeMs - sinceTimeMs;
+      if (durationMs <= 0 || durationMs > MAX_HOURLY_WINDOW_MS) {
+        return yield* new UsageReadError({
+          reason: "invalidWindow",
+          detail: "Hourly usage window must be greater than zero and at most 24 hours",
+        });
+      }
+      hourlyWindow = { sinceTimeMs, untilTimeMs };
+    }
+    const startedAtMs = yield* Clock.currentTimeMillis;
+    const [settings] = yield* Effect.all([readSettings, ensureRates(false)], { concurrency: 2 });
+    const aggregator = new UsageAggregator({
+      timeZone: input.timeZone,
+      sinceDay: input.sinceDay,
+      untilDay: input.untilDay,
+      resolution: input.resolution ?? "day",
+      ...hourlyWindow,
+      rates,
+      priceOverrides: createOverrideRateTable(settings.usagePriceOverrides),
+    });
+    for (const record of records) aggregator.add(record);
+    const readAt = yield* DateTime.now;
+    return {
+      contractVersion: USAGE_CONTRACT_VERSION,
+      readAt: DateTime.formatIso(readAt),
+      timeZone: input.timeZone,
+      sinceDay: input.sinceDay,
+      untilDay: input.untilDay,
+      buckets: aggregator.finish().buckets,
+      sources: [],
+      pricing: pricing(),
+      scanDurationMs: Math.max(0, (yield* Clock.currentTimeMillis) - startedAtMs),
+    } satisfies UsageSummary;
+  });
+
+  return { readSummary, readProjectSummary, refreshRates } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

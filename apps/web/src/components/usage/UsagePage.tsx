@@ -5,6 +5,7 @@ import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageProviderKind,
+  type UsageSummary,
 } from "@t3tools/contracts";
 import {
   CircleAlertIcon,
@@ -26,7 +27,7 @@ import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
 import { environmentPresentations } from "../../state/presentation";
 import { serverEnvironment } from "../../state/server";
-import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { useProjectUsage, useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
@@ -96,7 +97,29 @@ function isUsageWindowDays(value: number): value is UsagePagePreferences["window
   return WINDOW_OPTIONS.some((option) => option.days === value);
 }
 
-export function UsagePage() {
+function projectUsageTotals(summary: UsageSummary) {
+  return summary.buckets.reduce(
+    (totals, bucket) => ({
+      costUsd: totals.costUsd + bucket.costUsd,
+      totalTokens:
+        totals.totalTokens +
+        bucket.totals.uncachedInputTokens +
+        bucket.totals.cachedInputTokens +
+        bucket.totals.cacheCreationTokens +
+        bucket.totals.outputTokens,
+      records: totals.records + bucket.records,
+      unpricedRecords: totals.unpricedRecords + bucket.unpricedRecords,
+    }),
+    { costUsd: 0, totalTokens: 0, records: 0, unpricedRecords: 0 },
+  );
+}
+
+function formatProjectCost(costUsd: number, unpricedRecords: number): string {
+  if (unpricedRecords === 0) return formatUsd(costUsd);
+  return costUsd > 0 ? `${formatUsd(costUsd)}+` : "Unpriced";
+}
+
+export function UsagePage({ settingsPage = false }: { settingsPage?: boolean }) {
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: preferences.windowDays,
@@ -120,6 +143,7 @@ export function UsagePage() {
     window,
     selectedEnvironmentIds,
   );
+  const projectUsage = useProjectUsage(window, selectedEnvironmentIds, !showingLimits);
   const presentations = useAtomValue(environmentPresentations.presentationsAtom);
   const cursorAccessEnvironments = selectedEnvironments.filter((environment) =>
     environment.summary?.sources.some((source) => source.action === "enableCursorKeychain"),
@@ -167,6 +191,21 @@ export function UsagePage() {
         ? sortModelsByTokens(merged.models)
         : merged.models,
     [breakdown, merged.models, metric],
+  );
+  const projectRows = useMemo(
+    () =>
+      projectUsage.projects
+        .flatMap((entry) => {
+          if (entry.summary === null) return [];
+          const totals = projectUsageTotals(entry.summary);
+          return totals.records === 0 ? [] : [{ ...entry, totals }];
+        })
+        .sort((left, right) =>
+          metric === "cost"
+            ? right.totals.costUsd - left.totals.costUsd
+            : right.totals.totalTokens - left.totals.totalTokens,
+        ),
+    [metric, projectUsage.projects],
   );
   const activeProviders = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);
   const summaryRows: Array<
@@ -240,10 +279,12 @@ export function UsagePage() {
     }
     refreshingRef.current = true;
     setIsRefreshing(true);
-    void refresh(nextWindow).finally(() => {
-      refreshingRef.current = false;
-      setIsRefreshing(false);
-    });
+    void refresh(nextWindow)
+      .then(() => projectUsage.refresh(nextWindow))
+      .finally(() => {
+        refreshingRef.current = false;
+        setIsRefreshing(false);
+      });
   };
   const connectedLimitsEnvironments = [...presentations]
     .filter(
@@ -266,26 +307,33 @@ export function UsagePage() {
     isPast24Hours && window.sinceTime !== undefined && window.untilTime !== undefined
       ? `${formatDateTimeShort(window.sinceTime, window.timeZone)} to ${formatDateTimeShort(window.untilTime, window.timeZone)}`
       : `${formatDayShort(window.sinceDay)} to ${formatDayShort(window.untilDay)}`;
+  const environmentFilter = (
+    <UsageEnvironmentFilter
+      environments={environments}
+      selectedEnvironments={selectedEnvironments}
+      selectedEnvironmentIds={selectedEnvironmentIds}
+      onSelectionChange={setSelectedEnvironmentIds}
+      showUsageStatus={!showingLimits}
+      isPartial={isPartial}
+      duplicateSources={merged.duplicateSources}
+      staleEnvironments={merged.staleEnvironments}
+    />
+  );
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-2 xl:flex">
-      <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="col-span-2 min-w-0">
-        <WorkspaceBreadcrumbItem>
-          <h1>Usage</h1>
-        </WorkspaceBreadcrumbItem>
-        <WorkspaceBreadcrumbSeparator />
-        <WorkspaceBreadcrumbItem current className="min-w-10">
-          <UsageEnvironmentFilter
-            environments={environments}
-            selectedEnvironments={selectedEnvironments}
-            selectedEnvironmentIds={selectedEnvironmentIds}
-            onSelectionChange={setSelectedEnvironmentIds}
-            showUsageStatus={!showingLimits}
-            isPartial={isPartial}
-            duplicateSources={merged.duplicateSources}
-            staleEnvironments={merged.staleEnvironments}
-          />
-        </WorkspaceBreadcrumbItem>
-      </WorkspaceBreadcrumb>
+      {settingsPage ? (
+        <div className="col-span-2 min-w-0">{environmentFilter}</div>
+      ) : (
+        <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="col-span-2 min-w-0">
+          <WorkspaceBreadcrumbItem>
+            <h1>Usage</h1>
+          </WorkspaceBreadcrumbItem>
+          <WorkspaceBreadcrumbSeparator />
+          <WorkspaceBreadcrumbItem current className="min-w-10">
+            {environmentFilter}
+          </WorkspaceBreadcrumbItem>
+        </WorkspaceBreadcrumb>
+      )}
       {!showingLimits ? (
         <span className="hidden min-w-0 truncate text-xs text-muted-foreground 2xl:block">
           {windowLabel}
@@ -398,308 +446,371 @@ export function UsagePage() {
     </div>
   );
 
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
+  const pageContent = (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
+      {settingsPage ? (
+        <div className="border-b border-border/60 px-3 sm:px-4">{topbarContent}</div>
+      ) : (
         <WorkspacePageHeader electron={isElectron} className="h-auto">
           {topbarContent}
         </WorkspacePageHeader>
+      )}
 
-        <ScrollArea className="min-h-0 flex-1">
-          <WorkspacePageContainer width="wide">
-            {selectedEnvironments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {environments.length === 0
-                  ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
-                  : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
-              </p>
-            ) : showingLimits ? (
-              <UsageLimitsSection
-                selectedEnvironmentIds={selectedEnvironmentIds}
-                now={limitsNow}
-                cursorPrompt={
-                  cursorAccessEnvironments.length > 0 ? (
-                    <CursorEnableLimits
-                      environments={cursorAccessEnvironments}
-                      onEnabled={() => {
-                        void refresh();
-                        void refreshLimits(false, true);
-                      }}
-                    />
-                  ) : null
-                }
-              />
-            ) : isPending ? (
-              <UsageSkeleton />
-            ) : (
-              <>
-                {sourceMessages.map((message) => (
-                  <p key={message} className="mb-4 text-sm text-muted-foreground">
-                    {message}
-                  </p>
-                ))}
-                <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-                  <div className="flex min-w-0 flex-col gap-5">
-                    <div className="flex flex-col gap-1">
-                      <span className="text-4xl font-semibold text-foreground tabular-nums">
-                        {metric === "cost"
-                          ? formatUsd(merged.costUsd)
-                          : formatTokens(merged.totalTokens)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {metric !== "cost"
-                          ? `${formatCount(merged.sessions)} sessions`
-                          : merged.costQuality.unpricedShare > 0
-                            ? `${formatCount(merged.sessions)} sessions · API estimate excludes ${formatPercent(
-                                merged.costQuality.unpricedShare,
-                              )} unpriced records`
-                            : `${formatCount(merged.sessions)} sessions · API estimate`}
-                      </span>
-                    </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <WorkspacePageContainer width="wide">
+          {selectedEnvironments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {environments.length === 0
+                ? `Connect an environment to see ${showingLimits ? "limits" : "usage"}.`
+                : `Select an environment to see ${showingLimits ? "limits" : "usage"}.`}
+            </p>
+          ) : showingLimits ? (
+            <UsageLimitsSection
+              selectedEnvironmentIds={selectedEnvironmentIds}
+              now={limitsNow}
+              cursorPrompt={
+                cursorAccessEnvironments.length > 0 ? (
+                  <CursorEnableLimits
+                    environments={cursorAccessEnvironments}
+                    onEnabled={() => {
+                      void refresh();
+                      void refreshLimits(false, true);
+                    }}
+                  />
+                ) : null
+              }
+            />
+          ) : isPending ? (
+            <UsageSkeleton />
+          ) : (
+            <>
+              {sourceMessages.map((message) => (
+                <p key={message} className="mb-4 text-sm text-muted-foreground">
+                  {message}
+                </p>
+              ))}
+              <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+                <div className="flex min-w-0 flex-col gap-5">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-4xl font-semibold text-foreground tabular-nums">
+                      {metric === "cost"
+                        ? formatUsd(merged.costUsd)
+                        : formatTokens(merged.totalTokens)}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {metric !== "cost"
+                        ? `${formatCount(merged.sessions)} sessions`
+                        : merged.costQuality.unpricedShare > 0
+                          ? `${formatCount(merged.sessions)} sessions · API estimate excludes ${formatPercent(
+                              merged.costQuality.unpricedShare,
+                            )} unpriced records`
+                          : `${formatCount(merged.sessions)} sessions · API estimate`}
+                    </span>
+                  </div>
 
-                    {summaryRows.map((row) => {
-                      if (row.kind === "enable") {
-                        return (
-                          <CursorEnableRow
-                            key={`enable:${row.environment.environmentId}`}
-                            environmentId={row.environment.environmentId}
-                            label={row.environment.label}
-                            showEnvironment={selectedEnvironments.length > 1}
-                            onEnabled={() => {
-                              void refresh();
-                              void refreshLimits(false, true);
-                            }}
-                          />
-                        );
-                      }
-                      const provider = row.provider;
-                      const totals = merged.providers.find((entry) => entry.provider === provider);
-                      const share =
-                        metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
-                      const providerSessions = totals?.sessions ?? 0;
-                      const sessionLabel = `${formatCount(providerSessions)} ${
-                        providerSessions === 1 ? "session" : "sessions"
-                      }`;
+                  {summaryRows.map((row) => {
+                    if (row.kind === "enable") {
                       return (
-                        <div key={provider} className="flex flex-col gap-1">
-                          <div className="flex items-baseline justify-between gap-4">
-                            <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                              <span
-                                aria-hidden
-                                className="size-2 shrink-0 rounded-full"
-                                style={{
-                                  backgroundColor: PROVIDER_PRESENTATION[provider].color,
-                                }}
-                              />
-                              <ProviderMark provider={provider} className="size-4" />
-                              <span className="flex min-w-0 items-baseline gap-1.5">
-                                <span className="truncate">
-                                  {PROVIDER_PRESENTATION[provider].label}
-                                </span>
-                                <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums">
-                                  {sessionLabel}
-                                </span>
+                        <CursorEnableRow
+                          key={`enable:${row.environment.environmentId}`}
+                          environmentId={row.environment.environmentId}
+                          label={row.environment.label}
+                          showEnvironment={selectedEnvironments.length > 1}
+                          onEnabled={() => {
+                            void refresh();
+                            void refreshLimits(false, true);
+                          }}
+                        />
+                      );
+                    }
+                    const provider = row.provider;
+                    const totals = merged.providers.find((entry) => entry.provider === provider);
+                    const share =
+                      metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
+                    const providerSessions = totals?.sessions ?? 0;
+                    const sessionLabel = `${formatCount(providerSessions)} ${
+                      providerSessions === 1 ? "session" : "sessions"
+                    }`;
+                    return (
+                      <div key={provider} className="flex flex-col gap-1">
+                        <div className="flex items-baseline justify-between gap-4">
+                          <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                            <span
+                              aria-hidden
+                              className="size-2 shrink-0 rounded-full"
+                              style={{
+                                backgroundColor: PROVIDER_PRESENTATION[provider].color,
+                              }}
+                            />
+                            <ProviderMark provider={provider} className="size-4" />
+                            <span className="flex min-w-0 items-baseline gap-1.5">
+                              <span className="truncate">
+                                {PROVIDER_PRESENTATION[provider].label}
+                              </span>
+                              <span className="shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums">
+                                {sessionLabel}
                               </span>
                             </span>
-                            <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
-                              {metric === "cost"
-                                ? formatUsd(totals?.costUsd ?? 0)
-                                : formatTokens(totals?.totalTokens ?? 0)}
-                            </span>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
+                          </span>
+                          <span className="shrink-0 text-sm font-medium text-foreground tabular-nums">
                             {metric === "cost"
-                              ? `${formatPercent(share)} of cost · ${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                              : `${formatPercent(share)} of tokens · ${formatUsd(totals?.costUsd ?? 0)}`}
+                              ? formatUsd(totals?.costUsd ?? 0)
+                              : formatTokens(totals?.totalTokens ?? 0)}
                           </span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <span className="text-xs text-muted-foreground">
+                          {metric === "cost"
+                            ? `${formatPercent(share)} of cost · ${formatTokens(totals?.totalTokens ?? 0)} tokens`
+                            : `${formatPercent(share)} of tokens · ${formatUsd(totals?.costUsd ?? 0)}`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                  <div className="flex min-w-0 flex-col gap-3">
-                    <h2 className="text-sm font-medium text-foreground">
-                      {isPast24Hours ? "Hourly" : "Daily"}{" "}
-                      {metric === "tokens" ? "processed tokens" : "cost"}
-                    </h2>
-                    <UsageProviderChart
-                      providers={activeProviders}
-                      days={days}
-                      daily={merged.daily}
-                      hours={hours}
-                      hourly={merged.hourly}
-                      metric={metric}
-                      referenceTime={window.untilTime}
-                      resolution={isPast24Hours ? "hour" : "day"}
-                      timeZone={window.timeZone}
-                    />
-                  </div>
-                </section>
+                <div className="flex min-w-0 flex-col gap-3">
+                  <h2 className="text-sm font-medium text-foreground">
+                    {isPast24Hours ? "Hourly" : "Daily"}{" "}
+                    {metric === "tokens" ? "processed tokens" : "cost"}
+                  </h2>
+                  <UsageProviderChart
+                    providers={activeProviders}
+                    days={days}
+                    daily={merged.daily}
+                    hours={hours}
+                    hourly={merged.hourly}
+                    metric={metric}
+                    referenceTime={window.untilTime}
+                    resolution={isPast24Hours ? "hour" : "day"}
+                    timeZone={window.timeZone}
+                  />
+                </div>
+              </section>
 
-                <section className="flex flex-col gap-2">
-                  <h2 className="text-sm font-medium text-foreground">Totals</h2>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
-                    <Metric label="Processed tokens" value={formatTokens(merged.totalTokens)} />
-                    <Metric label="Cached input" value={formatTokens(merged.cachedInputTokens)} />
-                    <Metric
-                      label="Uncached input"
-                      value={formatTokens(merged.uncachedInputTokens)}
-                    />
-                    <Metric label="Output" value={formatTokens(merged.outputTokens)} />
-                    <Metric
-                      label="Cache savings"
-                      value={formatUsd(merged.costQuality.cacheSavingsUsd)}
-                    />
+              <section className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-sm font-medium text-foreground">By project</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Usage reported for AI turns run in T3 Code. Cost is an API rate estimate.
+                  </p>
+                </div>
+                {projectRows.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    {projectUsage.isPending
+                      ? "Loading project usage…"
+                      : projectUsage.failedCount > 0
+                        ? "Project usage could not be loaded."
+                        : "No recorded project usage in this window."}
+                  </p>
+                ) : (
+                  <div className="divide-y divide-border/60">
+                    {projectRows.map(({ project, environmentLabel, totals }) => (
+                      <div
+                        key={`${project.environmentId}:${project.id}`}
+                        className="flex items-center justify-between gap-4 py-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {project.title}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {environmentLabel} · {formatCount(totals.records)} recorded turns
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="text-sm font-medium tabular-nums text-foreground">
+                            {metric === "cost"
+                              ? formatProjectCost(totals.costUsd, totals.unpricedRecords)
+                              : formatTokens(totals.totalTokens)}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {metric === "cost"
+                              ? `${formatTokens(totals.totalTokens)} tokens`
+                              : formatProjectCost(totals.costUsd, totals.unpricedRecords)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </section>
+                )}
+                {projectRows.length > 0 && projectUsage.isPending ? (
+                  <p className="text-xs text-muted-foreground">Loading more project usage…</p>
+                ) : null}
+                {projectUsage.failedCount > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Usage could not be loaded for {formatCount(projectUsage.failedCount)} projects.
+                  </p>
+                ) : null}
+              </section>
 
-                <section className="flex flex-col gap-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
-                    <ToggleGroup
-                      aria-label="Usage breakdown"
-                      variant="segmented"
-                      value={[breakdown]}
-                      onValueChange={(next) => {
-                        const value = next[0];
-                        if (value === "model" || value === "time") setBreakdown(value);
-                      }}
-                    >
-                      {(
-                        [
-                          { value: "model", label: "Model" },
-                          { value: "time", label: isPast24Hours ? "Hour" : "Day" },
-                        ] as const
-                      ).map((option) => (
-                        <Toggle key={option.value} value={option.value}>
-                          {option.label}
-                        </Toggle>
+              <section className="flex flex-col gap-2">
+                <h2 className="text-sm font-medium text-foreground">Totals</h2>
+                <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
+                  <Metric label="Processed tokens" value={formatTokens(merged.totalTokens)} />
+                  <Metric label="Cached input" value={formatTokens(merged.cachedInputTokens)} />
+                  <Metric label="Uncached input" value={formatTokens(merged.uncachedInputTokens)} />
+                  <Metric label="Output" value={formatTokens(merged.outputTokens)} />
+                  <Metric
+                    label="Cache savings"
+                    value={formatUsd(merged.costQuality.cacheSavingsUsd)}
+                  />
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-medium text-foreground">Breakdown</h2>
+                  <ToggleGroup
+                    aria-label="Usage breakdown"
+                    variant="segmented"
+                    value={[breakdown]}
+                    onValueChange={(next) => {
+                      const value = next[0];
+                      if (value === "model" || value === "time") setBreakdown(value);
+                    }}
+                  >
+                    {(
+                      [
+                        { value: "model", label: "Model" },
+                        { value: "time", label: isPast24Hours ? "Hour" : "Day" },
+                      ] as const
+                    ).map((option) => (
+                      <Toggle key={option.value} value={option.value}>
+                        {option.label}
+                      </Toggle>
+                    ))}
+                  </ToggleGroup>
+                </div>
+
+                {breakdown === "model" ? (
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-2/5" />
+                      <col className="w-1/5" />
+                      <col className="w-1/5" />
+                      <col className="w-1/5" />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                        <th className="py-2 font-normal">Model</th>
+                        <th className="py-2 text-right font-normal">Cost</th>
+                        <th className="py-2 text-right font-normal">Share</th>
+                        <th className="py-2 text-right font-normal">Tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {breakdownModels.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                            No activity in this window.
+                          </td>
+                        </tr>
+                      ) : (
+                        breakdownModels.map((model) => (
+                          <tr
+                            key={`${model.provider}:${model.model}`}
+                            className="border-b border-border/50 transition-colors hover:bg-muted/50"
+                          >
+                            <td className="py-2 text-foreground">
+                              <span className="flex items-center gap-2">
+                                <ProviderMark provider={model.provider} className="size-3.5" />
+                                {model.model}
+                              </span>
+                            </td>
+                            <td className="py-2 text-right text-foreground tabular-nums">
+                              {isModelCostUnknown(model) ? (
+                                <span className="text-muted-foreground">Unpriced</span>
+                              ) : (
+                                formatUsd(model.costUsd)
+                              )}
+                            </td>
+                            <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              {isModelCostUnknown(model) ? "—" : formatPercent(model.costShare)}
+                            </td>
+                            <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              {formatTokens(model.totalTokens)}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  <table className="w-full table-fixed text-sm">
+                    <colgroup>
+                      <col className="w-2/5" />
+                      {activeProviders.map((provider) => (
+                        <col key={provider} style={{ width: timeValueColumnWidth }} />
                       ))}
-                    </ToggleGroup>
-                  </div>
-
-                  {breakdown === "model" ? (
-                    <table className="w-full table-fixed text-sm">
-                      <colgroup>
-                        <col className="w-2/5" />
-                        <col className="w-1/5" />
-                        <col className="w-1/5" />
-                        <col className="w-1/5" />
-                      </colgroup>
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="py-2 font-normal">Model</th>
-                          <th className="py-2 text-right font-normal">Cost</th>
-                          <th className="py-2 text-right font-normal">Share</th>
-                          <th className="py-2 text-right font-normal">Tokens</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {breakdownModels.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                              No activity in this window.
-                            </td>
-                          </tr>
-                        ) : (
-                          breakdownModels.map((model) => (
-                            <tr
-                              key={`${model.provider}:${model.model}`}
-                              className="border-b border-border/50 transition-colors hover:bg-muted/50"
-                            >
-                              <td className="py-2 text-foreground">
-                                <span className="flex items-center gap-2">
-                                  <ProviderMark provider={model.provider} className="size-3.5" />
-                                  {model.model}
-                                </span>
-                              </td>
-                              <td className="py-2 text-right text-foreground tabular-nums">
-                                {isModelCostUnknown(model) ? (
-                                  <span className="text-muted-foreground">Unpriced</span>
-                                ) : (
-                                  formatUsd(model.costUsd)
-                                )}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {isModelCostUnknown(model) ? "—" : formatPercent(model.costShare)}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {formatTokens(model.totalTokens)}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <table className="w-full table-fixed text-sm">
-                      <colgroup>
-                        <col className="w-2/5" />
+                      <col style={{ width: timeValueColumnWidth }} />
+                      <col style={{ width: timeValueColumnWidth }} />
+                    </colgroup>
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                        <th className="py-2 font-normal">{isPast24Hours ? "Hour" : "Day"}</th>
                         {activeProviders.map((provider) => (
-                          <col key={provider} style={{ width: timeValueColumnWidth }} />
+                          <th key={provider} className="py-2 text-right font-normal">
+                            {PROVIDER_PRESENTATION[provider].label}
+                          </th>
                         ))}
-                        <col style={{ width: timeValueColumnWidth }} />
-                        <col style={{ width: timeValueColumnWidth }} />
-                      </colgroup>
-                      <thead>
-                        <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                          <th className="py-2 font-normal">{isPast24Hours ? "Hour" : "Day"}</th>
-                          {activeProviders.map((provider) => (
-                            <th key={provider} className="py-2 text-right font-normal">
-                              {PROVIDER_PRESENTATION[provider].label}
-                            </th>
-                          ))}
-                          <th className="py-2 text-right font-normal">Total</th>
-                          <th className="py-2 text-right font-normal">Tokens</th>
+                        <th className="py-2 text-right font-normal">Total</th>
+                        <th className="py-2 text-right font-normal">Tokens</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {breakdownPeriods.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={activeProviders.length + 3}
+                            className="py-6 text-center text-muted-foreground"
+                          >
+                            No activity in this window.
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {breakdownPeriods.length === 0 ? (
-                          <tr>
-                            <td
-                              colSpan={activeProviders.length + 3}
-                              className="py-6 text-center text-muted-foreground"
-                            >
-                              No activity in this window.
+                      ) : (
+                        breakdownPeriods.map((period) => (
+                          <tr
+                            key={"hourStart" in period ? period.hourStart : period.day}
+                            className="border-b border-border/50 transition-colors hover:bg-muted/50"
+                          >
+                            <td className="py-2 text-foreground">
+                              {"hourStart" in period
+                                ? formatHourShort(period.hourStart, window.timeZone)
+                                : formatDayShort(period.day)}
+                            </td>
+                            {activeProviders.map((provider) => (
+                              <td
+                                key={provider}
+                                className="py-2 text-right text-muted-foreground tabular-nums"
+                              >
+                                {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                              </td>
+                            ))}
+                            <td className="py-2 text-right text-foreground tabular-nums">
+                              {formatUsd(period.costUsd)}
+                            </td>
+                            <td className="py-2 text-right text-muted-foreground tabular-nums">
+                              {formatTokens(period.totalTokens)}
                             </td>
                           </tr>
-                        ) : (
-                          breakdownPeriods.map((period) => (
-                            <tr
-                              key={"hourStart" in period ? period.hourStart : period.day}
-                              className="border-b border-border/50 transition-colors hover:bg-muted/50"
-                            >
-                              <td className="py-2 text-foreground">
-                                {"hourStart" in period
-                                  ? formatHourShort(period.hourStart, window.timeZone)
-                                  : formatDayShort(period.day)}
-                              </td>
-                              {activeProviders.map((provider) => (
-                                <td
-                                  key={provider}
-                                  className="py-2 text-right text-muted-foreground tabular-nums"
-                                >
-                                  {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
-                                </td>
-                              ))}
-                              <td className="py-2 text-right text-foreground tabular-nums">
-                                {formatUsd(period.costUsd)}
-                              </td>
-                              <td className="py-2 text-right text-muted-foreground tabular-nums">
-                                {formatTokens(period.totalTokens)}
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
-                  )}
-                </section>
-              </>
-            )}
-          </WorkspacePageContainer>
-        </ScrollArea>
-      </div>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            </>
+          )}
+        </WorkspacePageContainer>
+      </ScrollArea>
+    </div>
+  );
+
+  return settingsPage ? (
+    pageContent
+  ) : (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
+      {pageContent}
     </SidebarInset>
   );
 }

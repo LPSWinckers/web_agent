@@ -11,7 +11,7 @@
  */
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
  * Bumped whenever the shape of {@link UsageSummary} changes incompatibly. The
@@ -177,6 +177,8 @@ export const UsagePricing = Schema.Struct({
 export type UsagePricing = typeof UsagePricing.Type;
 
 export const UsageSummaryInput = Schema.Struct({
+  /** When set, report recorded turns belonging to this T3 Code project. */
+  projectId: Schema.optional(ProjectId),
   /** Inclusive first day of the window, in `timeZone`. */
   sinceDay: UsageDay,
   /** Inclusive last day of the window, in `timeZone`. */

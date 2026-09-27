@@ -102,7 +102,7 @@ GitLab calls these merge requests.
 GitHub, GitLab, and Azure DevOps support auto-merge while checks are outstanding. GitHub also
 supports approving waiting fork workflows and opening a revert pull request for a merged change.
 
-GitHub sharing is off by default. In Settings → Connections → GitHub sharing (Environments on mobile), choose
+GitHub sharing is off by default. In **Settings → Connections → GitHub sharing**, choose
 **Read PRs** or **Read and act** for each environment you trust to share GitHub access.
 Enable both the original environment and the environment answering its requests on this client.
 **Read and act** can use broader GitHub permissions than the original environment's credential;
@@ -112,7 +112,7 @@ environment clears its permission.
 GitHub review details, linked PR status, and permitted review actions can then use another
 connected environment signed in to the same GitHub account. Each needs a project on that host.
 A connected local environment is preferred for actions and can answer slow or failed reads.
-Browsers and mobile clients need a paired environment to use its GitHub CLI credentials.
+Browsers need a paired environment to use its GitHub CLI credentials.
 Credentials stay on their machines. Previously verified credentials remain usable for routing
 for ten minutes during a GitHub outage; new credentials must be verified first. An action with
 an uncertain result is never automatically retried elsewhere. Listings, diffs, and checkout or
@@ -132,8 +132,7 @@ in either direction. Forgejo, GitLab, Bitbucket, and Azure DevOps expose no reco
 server you are connected to keeps them instead: they follow you across the apps connected to that
 server, but the host's own site will not show them, and the count reads **viewed in T3 Code**.
 
-The **Code** tab is a web and desktop surface. The mobile app reports a pull request's status but
-does not show its diff, so marks are made and read on web and desktop.
+The **Code** tab shows the pull request diff and viewed marks in the web app.
 
 ## Troubleshooting
 
@@ -157,8 +156,7 @@ on the Pull Requests page, **Link to thread** lets you search for an active thre
 also lists the threads that link to it, including archived threads, so you can return to their context.
 
 Thread badges show a stack's layer count or the current review number with a count of additional
-links. On mobile, the Git overview lists linked reviews and their stacks; tap a review to open it.
-Linking and unlinking are available in the web and desktop clients.
+links. Link and unlink reviews from the web app.
 
 The **Linked pull requests** panel lists every review and groups stacks. Unlink a review from its
 row menu. An unlinked stack layer stays out of later syncs. Open linked reviews refresh on the server;

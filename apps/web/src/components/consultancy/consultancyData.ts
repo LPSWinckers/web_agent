@@ -9,7 +9,12 @@ export function isConsultancyInternalPath(path: string): boolean {
     path === ".consultancy" ||
     path.startsWith(".consultancy/") ||
     path === "consultancy" ||
-    path.startsWith("consultancy/")
+    path.startsWith("consultancy/") ||
+    path === ".werkbestanden" ||
+    path.startsWith(".werkbestanden/") ||
+    path.split("/").at(-1) === ".keep" ||
+    path.endsWith(".t3deck.json") ||
+    path.endsWith(".t3chat.json")
   );
 }
 

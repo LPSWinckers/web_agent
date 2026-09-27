@@ -3,7 +3,7 @@
 ## Developer Setup
 
 See the [development runbook](docs/operations/development.md#first-checkout) for the initial checkout,
-development commands, tests, and platform-specific desktop packaging prerequisites.
+development commands, tests, and server or web client build requirements.
 
 ## Read This First
 

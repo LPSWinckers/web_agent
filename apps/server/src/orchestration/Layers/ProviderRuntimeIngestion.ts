@@ -1957,6 +1957,39 @@ const make = Effect.gen(function* () {
         }
       }
 
+      if (
+        isTerminalTurn &&
+        eventTurnId &&
+        (event.payload.tokenUsage ||
+          (event.type === "turn.completed" && event.payload.totalCostUsd !== undefined))
+      ) {
+        const shell = yield* projectionSnapshotQuery.getThreadShellById(thread.id);
+        if (Option.isSome(shell)) {
+          yield* orchestrationEngine.dispatch({
+            type: "thread.activity.append",
+            commandId: yield* providerCommandId(event, "turn-usage"),
+            threadId: thread.id,
+            activity: {
+              id: EventId.make(`${event.eventId}:turn-usage`),
+              tone: "info",
+              kind: "turn.usage",
+              summary: "Turn usage recorded",
+              payload: {
+                provider: event.provider,
+                model: shell.value.modelSelection.model,
+                ...(event.payload.tokenUsage ? { tokenUsage: event.payload.tokenUsage } : {}),
+                ...(event.type === "turn.completed" && event.payload.totalCostUsd !== undefined
+                  ? { reportedCostUsd: event.payload.totalCostUsd }
+                  : {}),
+              },
+              turnId: eventTurnId,
+              createdAt: now,
+            },
+            createdAt: now,
+          });
+        }
+      }
+
       const assistantDelta =
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta

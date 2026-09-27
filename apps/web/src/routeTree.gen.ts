@@ -18,6 +18,7 @@ import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
+import { Route as SettingsUsageRouteImport } from './routes/settings.usage'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsSnapShotRouteImport } from './routes/settings.snap-shot'
@@ -29,6 +30,7 @@ import { Route as SettingsIntegrationsRouteImport } from './routes/settings.inte
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
+import { Route as SettingsCompanyRouteImport } from './routes/settings.company'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
@@ -79,6 +81,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsUsageRoute = SettingsUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsStorageRoute = SettingsStorageRouteImport.update({
   id: '/storage',
@@ -136,6 +143,11 @@ const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
   path: '/connections',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsCompanyRoute = SettingsCompanyRouteImport.update({
+  id: '/company',
+  path: '/company',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
   id: '/archived',
   path: '/archived',
@@ -181,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/company': typeof SettingsCompanyRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -192,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
@@ -207,6 +221,7 @@ export interface FileRoutesByTo {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/company': typeof SettingsCompanyRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -218,6 +233,7 @@ export interface FileRoutesByTo {
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -236,6 +252,7 @@ export interface FileRoutesById {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
+  '/settings/company': typeof SettingsCompanyRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -247,6 +264,7 @@ export interface FileRoutesById {
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
+  '/settings/usage': typeof SettingsUsageRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -266,6 +284,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/company'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -277,6 +296,7 @@ export interface FileRouteTypes {
     | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/storage'
+    | '/settings/usage'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
@@ -292,6 +312,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/company'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -303,6 +324,7 @@ export interface FileRouteTypes {
     | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/storage'
+    | '/settings/usage'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -320,6 +342,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/settings/appearance'
     | '/settings/archived'
+    | '/settings/company'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -331,6 +354,7 @@ export interface FileRouteTypes {
     | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/storage'
+    | '/settings/usage'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
@@ -413,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/settings/usage': {
+      id: '/settings/usage'
+      path: '/usage'
+      fullPath: '/settings/usage'
+      preLoaderRoute: typeof SettingsUsageRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/storage': {
       id: '/settings/storage'
       path: '/storage'
@@ -490,6 +521,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsConnectionsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/company': {
+      id: '/settings/company'
+      path: '/company'
+      fullPath: '/settings/company'
+      preLoaderRoute: typeof SettingsCompanyRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/archived': {
       id: '/settings/archived'
       path: '/archived'
@@ -554,6 +592,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
+  SettingsCompanyRoute: typeof SettingsCompanyRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -565,11 +604,13 @@ interface SettingsRouteChildren {
   SettingsSnapShotRoute: typeof SettingsSnapShotRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
+  SettingsUsageRoute: typeof SettingsUsageRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
+  SettingsCompanyRoute: SettingsCompanyRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
@@ -581,6 +622,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSnapShotRoute: SettingsSnapShotRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsStorageRoute: SettingsStorageRoute,
+  SettingsUsageRoute: SettingsUsageRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

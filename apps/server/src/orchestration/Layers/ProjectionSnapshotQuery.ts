@@ -1527,6 +1527,42 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       ),
     );
 
+  const listProjectUsageRows = SqlSchema.findAll({
+    Request: Schema.Struct({ projectId: ProjectId }),
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ projectId }) => sql`
+      SELECT
+        a.activity_id AS "activityId",
+        a.thread_id AS "threadId",
+        a.turn_id AS "turnId",
+        a.tone,
+        a.kind,
+        a.summary,
+        a.payload_json AS "payload",
+        a.sequence,
+        a.created_at AS "createdAt"
+      FROM projection_thread_activities a
+      JOIN projection_threads t ON t.thread_id = a.thread_id
+      WHERE t.project_id = ${projectId}
+        AND a.kind = 'turn.usage'
+        AND t.deleted_at IS NULL
+      ORDER BY a.created_at ASC, a.activity_id ASC
+    `,
+  });
+
+  const listProjectUsageActivities: ProjectionSnapshotQueryShape["listProjectUsageActivities"] = (
+    projectId,
+  ) =>
+    listProjectUsageRows({ projectId }).pipe(
+      Effect.map((rows) => rows.map(mapThreadActivityRow)),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.listProjectUsageActivities:query",
+          "ProjectionSnapshotQuery.listProjectUsageActivities:decodeRow",
+        ),
+      ),
+    );
+
   const listThreadActivityIdsByThread = SqlSchema.findAll({
     Request: ThreadIdLookupInput,
     Result: ProjectionThreadActivityIdRowSchema,
@@ -3776,6 +3812,7 @@ pending_approval_requests AS (
     getCommandReadModel,
     getUserInputActivity,
     listActivitiesByKind,
+    listProjectUsageActivities,
     getSnapshot,
     getShellSnapshot,
     getArchivedShellSnapshot,

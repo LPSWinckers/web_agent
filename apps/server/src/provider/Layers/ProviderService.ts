@@ -85,6 +85,7 @@ import * as AnalyticsService from "../../telemetry/AnalyticsService.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import { companyLibraryContext } from "../companyLibraryContext.ts";
 import * as ProjectionSnapshotQuery from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 const isModelSelection = Schema.is(ModelSelection);
 const encodePromptJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -1610,6 +1611,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
       return false;
     };
+    if (!appendAttachmentContext(parsed.agentContext)) {
+      return yield* toValidationError(
+        "ProviderService.sendTurn",
+        `Input plus file context exceeds the ${PROVIDER_SEND_TURN_MAX_INPUT_CHARS} character limit`,
+      );
+    }
     for (const attachment of attachments) {
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,
@@ -1667,6 +1674,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ].join("\n")
           : undefined,
       );
+    }
+
+    const companyLibrary = yield* serverSettings.getSettings.pipe(
+      Effect.map((settings) => settings.companyLibrary),
+      Effect.orElseSucceed(() => null),
+    );
+    const companyContext = companyLibraryContext(
+      companyLibrary,
+      parsed.input,
+      attachments.length > 0,
+    );
+    if (companyContext) {
+      appendAttachmentContext(companyContext);
     }
 
     const input = {

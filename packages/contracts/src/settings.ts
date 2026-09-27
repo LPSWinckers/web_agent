@@ -1079,7 +1079,68 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+/** Guidance owned by one server and available to agents working through it. */
+export const CompanyLibraryEntry = Schema.Struct({
+  id: TrimmedNonEmptyString.check(Schema.isMaxLength(80)),
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  instructions: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)),
+});
+export type CompanyLibraryEntry = typeof CompanyLibraryEntry.Type;
+
+export const CompanyWordStandard = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  fontFamily: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  bodyColor: TrimmedNonEmptyString.check(Schema.isPattern(/^[0-9A-Fa-f]{6}$/)),
+  headingColor: TrimmedNonEmptyString.check(Schema.isPattern(/^[0-9A-Fa-f]{6}$/)),
+  accentColor: TrimmedNonEmptyString.check(Schema.isPattern(/^[0-9A-Fa-f]{6}$/)),
+  sections: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(100))).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(12),
+  ),
+});
+export type CompanyWordStandard = typeof CompanyWordStandard.Type;
+
+export const DEFAULT_COMPANY_WORD_STANDARD: CompanyWordStandard = {
+  name: "Consultancy report",
+  fontFamily: "Arial",
+  bodyColor: "263445",
+  headingColor: "1F345E",
+  accentColor: "0075AB",
+  sections: [
+    "Samenvatting",
+    "Aanleiding en doel",
+    "Aanpak",
+    "Bevindingen",
+    "Aanbevelingen",
+    "Bronnen",
+  ],
+};
+
+export const CompanyLibrary = Schema.Struct({
+  companyName: TrimmedString.check(Schema.isMaxLength(100)),
+  guidance: TrimmedString.check(Schema.isMaxLength(3000)),
+  chartTemplates: Schema.Array(CompanyLibraryEntry).check(Schema.isMaxLength(20)),
+  skills: Schema.Array(CompanyLibraryEntry).check(Schema.isMaxLength(20)),
+  powerpointStandards: Schema.Array(CompanyLibraryEntry).check(Schema.isMaxLength(20)),
+  wordStandard: CompanyWordStandard.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANY_WORD_STANDARD)),
+  ),
+});
+export type CompanyLibrary = typeof CompanyLibrary.Type;
+
+export const DEFAULT_COMPANY_LIBRARY: CompanyLibrary = {
+  companyName: "",
+  guidance: "",
+  chartTemplates: [],
+  skills: [],
+  powerpointStandards: [],
+  wordStandard: DEFAULT_COMPANY_WORD_STANDARD,
+};
+
 export const ServerSettings = Schema.Struct({
+  companyLibrary: CompanyLibrary.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANY_LIBRARY)),
+  ),
   worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   storageCleanup: StorageCleanupSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(StorageCleanupSettings)({}))),
@@ -1440,6 +1501,7 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  companyLibrary: Schema.optionalKey(CompanyLibrary),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(
       Schema.Union([

@@ -13,7 +13,9 @@ import {
 
 export type SettingsPath =
   | "/settings/projects"
+  | "/settings/usage"
   | "/settings/general"
+  | "/settings/company"
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/snap-shot"
@@ -84,7 +86,9 @@ export interface SettingsSearchAvailability {
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Project",
+  "/settings/usage": "Usage",
   "/settings/general": "General",
+  "/settings/company": "Company",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
@@ -827,7 +831,9 @@ const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id,
 
 const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
   "/settings/projects": "project",
+  "/settings/usage": null,
   "/settings/general": null,
+  "/settings/company": "environment",
   "/settings/appearance": null,
   "/settings/snap-shot": null,
   // Keybindings fan out to the selection; Providers shows the representative

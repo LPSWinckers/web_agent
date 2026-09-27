@@ -1,6 +1,6 @@
 # Settings and project overrides
 
-On web and desktop, the "Applying settings for …" sentence at the top of Settings pages picks
+In the web app, the "Applying settings for …" sentence at the top of Settings pages picks
 the project and environment a change applies to. Pages that only hold device preferences, such as
 Appearance, don't show it. They start at **All projects** and **All environments**
 and stay selected as you move between categories or search for a setting.
@@ -26,17 +26,6 @@ again.
 
 Providers and diagnostics are per machine: they show one environment at a time, the primary
 one until you pick another. Every other setting fans out to the selection.
-
-On mobile, open **Settings** and use the filter in its header to choose connected environments
-and a project. The filter stays available in server-setting pages. With **All projects** selected,
-the **Server settings** categories and auto-settle controls in **Thread behavior** edit the
-selected environments' defaults. Choosing a project edits its overrides on the selected
-environments. Use **Use defaults** in a page to remove that page's project overrides.
-Open **Settings → Projects & threads → Overview** to rename the project across its selected
-connected checkouts and see where those checkouts live.
-Settings that are environment-wide stay read-only while a project is selected. When selected
-targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
-and other phone-only settings ignore the filter.
 
 ## Defaults and inheritance
 
@@ -96,7 +85,7 @@ T3 Code detect an icon again.
 
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
 
-When no image is found, web and desktop show a two-character monogram with a color
+When no image is found, the web app shows a two-character monogram with a color
 from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
 `Silver Orchard` becomes `SO`, and `M7 Forge` becomes `M7`.
 
@@ -104,8 +93,13 @@ from the icon palette, derived from the saved project name. For example, `Nebula
 
 In Source Control, enable **Automatically pull** to keep the default-branch checkout up to date
 with its configured upstream. Choose an environment to set the default or a project to override it.
-On mobile, use **Settings → Source control** to change selected environment defaults or project overrides.
 
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Company library
+
+In the web app, choose one server in Settings and open **Company**. The shared **Berenschot 2026** standard shows its colors, five slide layouts, and one reusable example of each of six chart types. The PowerPoint maker, export, and agents use this same standard for everyone. Graphs made from your own data use the same visual rules with your own source.
+
+An admin session can save a company name, general agent guidance, and skill recipes for the selected server. These records apply to agent turns started from the web client. Mention a skill recipe by name to use it.

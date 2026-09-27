@@ -59,7 +59,8 @@ interface ChatHeaderProps {
   preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
   rightPanelOpen: boolean;
-  onNewThreadInProject: () => void;
+  projectClickAction: "new-thread" | "open-workspace";
+  onProjectClick: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
@@ -123,7 +124,8 @@ export const ChatHeader = memo(function ChatHeader({
   preferredScriptId,
   keybindings,
   rightPanelOpen,
-  onNewThreadInProject,
+  projectClickAction,
+  onProjectClick,
   onOpenProjectSettings,
   onRunProjectScript,
   onAddProjectScript,
@@ -368,8 +370,12 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <button
                       type="button"
-                      aria-label={`New thread in ${activeProjectName}`}
-                      onClick={onNewThreadInProject}
+                      aria-label={
+                        projectClickAction === "open-workspace"
+                          ? `Open ${activeProjectName} workspace`
+                          : `New thread in ${activeProjectName}`
+                      }
+                      onClick={onProjectClick}
                       className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     />
                   }
@@ -379,7 +385,11 @@ export const ChatHeader = memo(function ChatHeader({
                     {activeProjectName}
                   </WorkspaceBreadcrumbText>
                 </TooltipTrigger>
-                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+                <TooltipPopup side="top">
+                  {projectClickAction === "open-workspace"
+                    ? `Open ${activeProjectName} workspace`
+                    : `New thread in ${activeProjectName}`}
+                </TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>

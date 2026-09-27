@@ -249,6 +249,50 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
   });
 
   describe("writeFile", () => {
+    it.effect("writes binary PowerPoint bytes from base64 transport", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const bytes = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0xff]);
+
+        yield* workspaceFileSystem.writeFile({
+          cwd,
+          relativePath: "powerpoints/proposal.pptx",
+          contents: Buffer.from(bytes).toString("base64"),
+          encoding: "base64",
+        });
+
+        expect(
+          Array.from(yield* fileSystem.readFile(path.join(cwd, "powerpoints/proposal.pptx"))),
+        ).toEqual(Array.from(bytes));
+      }),
+    );
+
+    it.effect("rejects malformed binary transport before writing a file", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const failure = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "powerpoints/broken.pptx",
+            contents: "not base64!",
+            encoding: "base64",
+          })
+          .pipe(Effect.flip);
+        expect(failure).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileSystemOperationError);
+        expect(
+          yield* fileSystem
+            .stat(path.join(cwd, "powerpoints/broken.pptx"))
+            .pipe(Effect.orElseSucceed(() => null)),
+        ).toBeNull();
+      }),
+    );
+
     it.effect("writes files relative to the workspace root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

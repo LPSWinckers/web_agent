@@ -6,11 +6,10 @@ which models and account access are available through this agent.
 
 ## Set up Antigravity
 
-On web or desktop, open **Settings > Providers**, choose the environment that runs
+On web, open **Settings > Providers**, choose the environment that runs
 your project, and enable Antigravity. Install its runtime there, then choose
 **Sign in with Google** and complete the browser sign-in. Wait for T3 Code to confirm
-account access and load models before starting a thread. Provider setup is not
-available in the mobile app.
+account access and load models before starting a thread.
 
 Installation continues if you leave settings or reconnect. Setup requires
 permission to operate the environment; update an older server if it does not offer
@@ -23,7 +22,7 @@ on the environment's machine. From another device, the final page will usually
 fail to load because the sign-in listener is on the environment.
 
 Copy the full return address, including everything after `?`, into the return URL
-field in the web or desktop client where you started setup, then choose
+field in the web client where you started setup, then choose
 **Continue**. Keep the original address; do not replace it with the server's
 hostname. Only that T3 Code sign-in session can finish the attempt. If it expires,
 retry sign-in and use the new link.
@@ -108,7 +107,7 @@ inspect activity.
 ## Accounts and removal
 
 Add an Antigravity provider instance for each Google account in
-**Settings > Providers** on web or desktop. Each has its own sign-in; downloaded
+**Settings > Providers** on web. Each has its own sign-in; downloaded
 runtimes are shared on the environment.
 
 | Action                    | Effect                                                            |
@@ -130,9 +129,9 @@ is refused while the runtime is in use.
 A server restart keeps your Google sign-in. The provider shows the saved account
 until a session, a refresh, or a sign-out reports something new.
 
-To check access and reload models, use **Refresh provider status** in web or desktop
-provider settings, or **Refresh models** in mobile thread settings. If asked to
-sign in again, use setup on web or desktop.
+To check access and reload models, use **Refresh provider status** in web
+provider settings. If asked to
+sign in again, use setup on web.
 
 If Google reports `SUBSCRIPTION_REQUIRED`, an account restriction, or a usage limit,
 follow the provider's message and any retry time. See [Google's account plans][plans]

@@ -601,6 +601,28 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  it.effect("serves a Word document selected from workspace files", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-asset-word-" });
+      const documentPath = path.join(root, "Report.docx");
+      yield* fileSystem.writeFile(documentPath, new Uint8Array([0x50, 0x4b, 0x03, 0x04]));
+      const canonicalPath = yield* fileSystem.realPath(documentPath);
+
+      const result = yield* issueAssetUrl({
+        resource: { _tag: "draft-workspace-file", cwd: root, path: "Report.docx" },
+      });
+      const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+      const token = suffix.slice(0, suffix.indexOf("/"));
+
+      expect(yield* resolveAsset(token, "Report.docx")).toEqual({
+        kind: "file",
+        path: canonicalPath,
+      });
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("serves absolute draft media files exactly, wherever they live", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

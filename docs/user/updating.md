@@ -1,7 +1,7 @@
 # Updating T3 Code
 
-The app you use and the server running your agents can be on different machines.
-When a server is behind your web or desktop app, an update notice appears in the
+The browser and the server running your agents can be on different machines.
+When a server is behind the web client, an update notice appears in the
 conversation and **Settings → Connections**. Update the machine named in that
 notice.
 
@@ -25,11 +25,10 @@ to allow recovery without a connected client.
 
 The offered action depends on how the server runs:
 
-| Action                     | What to do                                                                                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Update server**          | Keep the client open while it installs and reconnects. Supported background services update remotely. For a desktop-hosted server, this also closes and relaunches the desktop app on the host. |
-| **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
-| **Copy update command**    | Stop the command-line server on its host and relaunch with the copied command, keeping your usual startup options.                                                                              |
+| Action                  | What to do                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Update server**       | Keep the web client open while a supported background service installs and reconnects.                 |
+| **Copy update command** | Stop the command-line server on its host and relaunch with the copied command and usual startup flags. |
 
 On the host, run:
 
@@ -55,23 +54,3 @@ update can roll back to the previous version. If the update still fails:
 1. Retry the offered action once.
 2. Check that you updated the server's machine, not only the device you are using.
 3. For a command-line server, stop it and relaunch the exact version shown in the notice.
-
-## Mobile updates
-
-To update an environment from your phone, open **Settings → Environments** and
-select it. **Check for updates** finds the latest release on that environment's
-current release channel. Keep the app open while the environment updates and
-reconnects. Hosts that cannot update remotely show instructions for updating on
-the machine instead.
-
-The same page lets you refresh provider status and update supported providers.
-These controls require a connected environment and permission to operate it.
-Provider update checks and restart continuation preferences are in
-**Settings → Maintenance**. If provider update checks are disabled, enable them
-there before refreshing to find newer versions.
-
-Install App Store or Google Play releases as usual. The mobile app can also
-download updates in the background and apply them when you next leave the app.
-It saves drafts and queued messages before restarting. If you keep the app open
-for a long time, it may ask to install immediately; choosing **Later** leaves the
-update queued for the next suitable moment.

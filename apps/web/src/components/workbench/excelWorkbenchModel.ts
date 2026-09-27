@@ -35,6 +35,19 @@ export type WorkbookCommand =
   | { readonly type: "ask"; readonly question: string }
   | { readonly type: "chart"; readonly groupColumn: string; readonly valueColumn: string }
   | { readonly type: "context" }
+  | { readonly type: "agentContext" }
+  | {
+      readonly type: "editCell";
+      readonly row: number;
+      readonly column: number;
+      readonly value: WorkbookCell;
+    }
+  | { readonly type: "insertRow"; readonly index: number }
+  | { readonly type: "deleteRows"; readonly indexes: ReadonlyArray<number> }
+  | { readonly type: "insertColumn"; readonly index: number; readonly name: string }
+  | { readonly type: "deleteColumns"; readonly indexes: ReadonlyArray<number> }
+  | { readonly type: "addSheet"; readonly name: string }
+  | { readonly type: "save" }
   | { readonly type: "export" };
 
 type WithRequestId<Command> = Command extends WorkbookCommand
@@ -49,9 +62,11 @@ export type WorkbookResponse =
       readonly requestId: number;
       readonly fileName: string;
       readonly fileSize: number;
+      readonly structureWarning: string | null;
       readonly sheetNames: ReadonlyArray<string>;
       readonly overview: WorkbookSheetOverview;
       readonly rows: ReadonlyArray<ReadonlyArray<WorkbookCell>>;
+      readonly rowIndexes: ReadonlyArray<number>;
       readonly page: number;
       readonly filteredRowCount: number;
     }
@@ -59,11 +74,13 @@ export type WorkbookResponse =
       readonly type: "rows";
       readonly requestId: number;
       readonly rows: ReadonlyArray<ReadonlyArray<WorkbookCell>>;
+      readonly rowIndexes: ReadonlyArray<number>;
       readonly page: number;
       readonly filteredRowCount: number;
     }
   | { readonly type: "answer"; readonly requestId: number; readonly text: string }
   | { readonly type: "context"; readonly requestId: number; readonly text: string }
+  | { readonly type: "saved"; readonly requestId: number; readonly data: ArrayBuffer }
   | {
       readonly type: "chart";
       readonly requestId: number;

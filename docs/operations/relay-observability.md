@@ -4,10 +4,9 @@
 
 The relay Alchemy stack owns a shared Axiom trace setup:
 
-- `t3-code-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker, mobile app, and
+- `t3-code-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker and
   first-party relay clients
 - `t3-code-relay-otel-ingest-prod`, the dataset-scoped Worker ingest token
-- `t3-code-mobile-otel-ingest-prod`, the dataset-scoped mobile ingest token
 - `t3-code-relay-client-otel-ingest-prod`, the dataset-scoped first-party relay-client ingest token
 - `t3-code-relay-recent-spans-prod`, a view of recent request and endpoint spans
 
@@ -21,8 +20,7 @@ vp run deploy
 ```
 
 Alchemy resolves account-level Axiom deployment credentials through its provider. At runtime, the
-Worker receives only its scoped ingest token. Mobile and relay clients use their own separately
-provisioned scoped ingest tokens.
+The Worker and relay clients each use a scoped ingest token.
 
 The Worker emits Effect's built-in HTTP server spans plus endpoint and database child spans.
 Effect's OpenTelemetry exporter stores semantic HTTP attributes below the `attributes.` prefix.

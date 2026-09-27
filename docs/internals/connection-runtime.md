@@ -1,10 +1,9 @@
 # Connection runtime
 
-Web, the desktop renderer, and mobile share one connection owner per environment
-in `packages/client-runtime`. Platform code supplies storage, credentials, network
-signals, and application lifecycle events. React views consume the runtime.
-Keeping retries and session lifetime here prevents competing reconnect loops when
-several views need the same environment.
+The web client uses one connection owner per environment in
+`packages/client-runtime`. It supplies browser storage, credentials, network
+signals, and lifecycle events. React views consume the runtime, so they do not
+start competing reconnect loops for the same environment.
 
 ## One transport retry owner
 
@@ -16,10 +15,8 @@ unchanged conditions.
 
 Foregrounding needs different treatment depending on the connection's state.
 It wakes a retry immediately, leaves an ordinary in-flight attempt alone, and
-probes an established session before replacing it. A long mobile background
-suspension forces replacement because the OS can kill a socket without reporting
-closure. Treating every foreground event as a reconnect delays healthy attempts;
-treating every resume as harmless leaves suspended sockets stuck.
+probes an established session before replacing it. A long browser suspension can
+leave a socket stuck even when the browser has not reported closure.
 
 The [registry](../../packages/client-runtime/src/connection/registry.ts) scopes
 connections by environment. An involuntary disconnect retains the registration
@@ -61,15 +58,13 @@ stream, which stops when the last consumer unmounts; hidden mounted routes still
 count. A registry-local cache retains state and its replay cursor for five idle
 minutes so back navigation can resume without another snapshot download.
 
-The desktop app adds one consumer: a
-[keep-alive](../../apps/web/src/state/threads.ts) mounts every thread whose
+The thread state service uses a
+[keep-alive](../../apps/web/src/state/threads.ts) to mount every thread whose
 session is starting or running, in each enabled environment. Opening a running
 thread then needs no replay. The shell and detail streams are independent, so
 the shell can report a stop before the detail loads or catches up. A stopped
 thread stays mounted until its own stream is live and shows the stop, and the
 stream then closes and saves the settled state.
-Web and mobile do not keep threads alive.
-
 Retain state and cursor together only after an update finishes. Cancellation must
 not advance the cached cursor beyond the applied data, and an old scope must not
 overwrite its successor's cache. Preserve pagination data on reuse, but clear

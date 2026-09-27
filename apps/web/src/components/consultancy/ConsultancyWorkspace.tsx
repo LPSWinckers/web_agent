@@ -1,19 +1,35 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { FileSpreadsheetIcon, FileTextIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import {
+  FileSpreadsheetIcon,
+  FileTextIcon,
+  MessageSquareIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { SpreadsheetFileViewer } from "~/components/workbench/SpreadsheetFileViewer";
+import { fileChatSidecarPath, parseFileChatSidecar } from "~/components/files/useFileChatThread";
+import { ThreadRouteView } from "~/components/ThreadRouteView";
+import { requestDraftAutoSend, type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { newProjectId } from "~/lib/utils";
-import { useProjects } from "~/state/entities";
+import { useProjects, useThreadShell } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { projectEnvironment } from "~/state/projects";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import { filesystemEnvironment } from "~/state/filesystem";
+import {
+  ensureBrowseDirectoryPath,
+  getBrowseParentPath,
+} from "@t3tools/client-runtime/state/projects";
 import {
   clearConsultancyProjectSelection,
   readActiveConsultancyProject,
@@ -30,13 +46,50 @@ import {
   splitCustomerProject,
   type ProjectDocument,
 } from "./consultancyData";
-import { ConsultancyProjectFiles } from "./ConsultancyProjectFiles";
+import { ConsultancyFileViewer, ConsultancyProjectFiles } from "./ConsultancyProjectFiles";
+import { ProjectUsageTracker } from "./ProjectUsageTracker";
+import { projectFolderName, projectFolderPath } from "./consultancyProjectSetup";
+import { consultancyProjectFolders, type ProjectSetupFile } from "./consultancyProjectFolders";
+import {
+  takeConsultancyThreadTabRequests,
+  type ShowConsultancyOverviewDetail,
+} from "./consultancyThreadTabs";
 
 const MANIFEST_PATH = "consultancy/project.json";
+
+type ProjectTab =
+  | { kind: "file"; key: string; name: string; path: string }
+  | { kind: "workbook"; key: string; name: string; file: File }
+  | {
+      kind: "chat";
+      key: string;
+      name: string;
+      threadRef: ScopedThreadRef;
+      draftId?: DraftId;
+      editorContext?: string;
+      fileKey?: string;
+    };
+
+type ProjectTabs = { scope: string; open: ProjectTab[]; active: string | null };
 
 function errorText(result: Parameters<typeof squashAtomCommandFailure>[0]): string {
   const error = squashAtomCommandFailure(result);
   return error instanceof Error ? error.message : "The request failed.";
+}
+
+function ProjectChatTab({ tab }: { tab: Extract<ProjectTab, { kind: "chat" }> }) {
+  const thread = useThreadShell(tab.threadRef);
+  return (
+    <ThreadRouteView
+      target={
+        tab.draftId && !thread
+          ? { kind: "draft", draftId: tab.draftId }
+          : { kind: "server", threadRef: tab.threadRef }
+      }
+      embedded
+      {...(tab.editorContext ? { editorContext: tab.editorContext } : {})}
+    />
+  );
 }
 
 export function ConsultancyWorkspace() {
@@ -45,20 +98,36 @@ export function ConsultancyWorkspace() {
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const readFile = useAtomQueryRunner(projectEnvironment.readFile, {
+    reportFailure: false,
+    refresh: true,
+  });
+  const browseFolders = useAtomQueryRunner(filesystemEnvironment.browse, { reportFailure: false });
   const newThread = useNewThreadHandler();
   const [selectedId, setSelectedId] = useState(readActiveConsultancyProject);
   const [customer, setCustomer] = useState(readPendingConsultancyCustomer);
   const [projectName, setProjectName] = useState("");
   const [folder, setFolder] = useState("");
+  const [browsePath, setBrowsePath] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingSetup, setPendingSetup] = useState<{
+    projectId: ReturnType<typeof newProjectId>;
+    root: string;
+    files: ProjectSetupFile[];
+    next: number;
+  } | null>(null);
   const [error, setError] = useState("");
-  const [openedFile, setOpenedFile] = useState<File | null>(null);
+  const [tabState, setTabState] = useState<ProjectTabs>({ scope: "", open: [], active: null });
+  const [dirtyFileTabs, setDirtyFileTabs] = useState<ReadonlySet<string>>(() => new Set());
   const [documentsOverride, setDocumentsOverride] = useState<ReadonlyArray<ProjectDocument> | null>(
     null,
   );
   const [customersVersion, setCustomersVersion] = useState(0);
   const project = projects.find((entry) => entry.id === selectedId) ?? null;
+  const projectScope = project ? `${project.environmentId}:${project.id}` : "";
+  const tabs = tabState.scope === projectScope ? tabState.open : [];
+  const activeTab = tabState.scope === projectScope ? tabState.active : null;
   const projectIdentity = project ? splitCustomerProject(project) : null;
   const customers = useMemo(
     () =>
@@ -85,15 +154,73 @@ export function ConsultancyWorkspace() {
     [manifestQuery.data?.contents],
   );
   const documents = documentsOverride ?? manifest.documents;
+  const proposedFolder = useMemo(() => {
+    if (!folder.trim() || !projectName.trim()) return null;
+    try {
+      return projectFolderPath(folder, projectName, new Date());
+    } catch {
+      return null;
+    }
+  }, [folder, projectName]);
+  const folderQuery = useEnvironmentQuery(
+    browsePath && environmentId
+      ? filesystemEnvironment.browse({
+          environmentId,
+          input: { partialPath: browsePath },
+        })
+      : null,
+  );
 
   useEffect(() => {
     const update = () => {
       setSelectedId(readActiveConsultancyProject());
       setDocumentsOverride(null);
-      setOpenedFile(null);
+      setTabState({ scope: "", open: [], active: null });
     };
     window.addEventListener("consultancy-project-change", update);
     return () => window.removeEventListener("consultancy-project-change", update);
+  }, []);
+
+  useEffect(() => {
+    const showOverview = (event: Event) => {
+      const { detail } = event as CustomEvent<ShowConsultancyOverviewDetail>;
+      const scope = `${detail.environmentId}:${detail.projectId}`;
+      if (readActiveConsultancyProject() !== detail.projectId) {
+        selectConsultancyProject(detail.projectId);
+      }
+      setSelectedId(detail.projectId);
+      setTabState((previous) => ({
+        scope,
+        open: previous.scope === scope ? previous.open : [],
+        active: null,
+      }));
+    };
+    window.addEventListener("consultancy-show-overview", showOverview);
+    return () => window.removeEventListener("consultancy-show-overview", showOverview);
+  }, []);
+
+  useEffect(() => {
+    const openQueuedThreads = () => {
+      for (const detail of takeConsultancyThreadTabRequests()) {
+        const key = `chat:${detail.threadRef.environmentId}:${detail.threadRef.threadId}`;
+        const detailProjectScope = `${detail.threadRef.environmentId}:${detail.projectId}`;
+        setSelectedId(detail.projectId);
+        setTabState((previous) => {
+          const open = previous.scope === detailProjectScope ? previous.open : [];
+          const existing = open.some((tab) => tab.key === key);
+          return {
+            scope: detailProjectScope,
+            open: existing
+              ? open
+              : [...open, { kind: "chat", key, name: detail.title, threadRef: detail.threadRef }],
+            active: key,
+          };
+        });
+      }
+    };
+    window.addEventListener("consultancy-open-thread", openQueuedThreads);
+    openQueuedThreads();
+    return () => window.removeEventListener("consultancy-open-thread", openQueuedThreads);
   }, []);
 
   useEffect(() => {
@@ -120,27 +247,69 @@ export function ConsultancyWorkspace() {
   };
 
   const create = async () => {
-    if (!environmentId || !customer.trim() || !projectName.trim() || !folder.trim()) return;
+    if (
+      !environmentId ||
+      (!pendingSetup && (!customer.trim() || !projectName.trim() || !folder.trim()))
+    )
+      return;
     setBusy(true);
     setError("");
     try {
-      const projectId = newProjectId();
-      const result = await createProject({
-        environmentId,
-        input: {
-          projectId,
-          title: customerProjectTitle(customer, projectName),
-          workspaceRoot: folder.trim(),
-          createWorkspaceRootIfMissing: true,
-          defaultModelSelection: null,
-        },
-      });
-      if (result._tag === "Failure") throw new Error(errorText(result));
-      selectConsultancyProject(projectId);
-      setSelectedId(projectId);
+      let setup = pendingSetup;
+      if (!setup) {
+        const now = new Date();
+        const root = projectFolderPath(folder, projectName, now);
+        const name = projectFolderName(projectName, now);
+        const parent = await browseFolders({
+          environmentId,
+          input: { partialPath: ensureBrowseDirectoryPath(folder.trim()) },
+        });
+        if (parent._tag === "Failure") throw new Error("Choose an existing parent folder.");
+        if (parent.value.entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) {
+          throw new Error(`A folder named ${name} already exists there.`);
+        }
+        const files = consultancyProjectFolders();
+        const projectId = newProjectId();
+        const result = await createProject({
+          environmentId,
+          input: {
+            projectId,
+            title: customerProjectTitle(customer, projectName),
+            workspaceRoot: root,
+            createWorkspaceRootIfMissing: true,
+            defaultModelSelection: null,
+          },
+        });
+        if (result._tag === "Failure") throw new Error(errorText(result));
+        setup = { projectId, root, files, next: 0 };
+        setPendingSetup(setup);
+        selectConsultancyProject(projectId);
+        setSelectedId(projectId);
+      }
+      for (let index = setup.next; index < setup.files.length; index++) {
+        const file = setup.files[index]!;
+        const saved = await writeFile({
+          environmentId,
+          input: {
+            cwd: setup.root,
+            relativePath: file.path,
+            contents: file.contents,
+          },
+        });
+        if (saved._tag === "Failure") {
+          setPendingSetup({ ...setup, next: index });
+          throw new Error(
+            `Project folder was created, but ${file.path} could not be saved. ${errorText(saved)}`,
+          );
+        }
+      }
+      setPendingSetup(null);
+      selectConsultancyProject(setup.projectId);
+      setSelectedId(setup.projectId);
       setShowCreate(false);
       setProjectName("");
       setFolder("");
+      setBrowsePath(null);
       setCustomersVersion((version) => version + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create the project.");
@@ -174,11 +343,164 @@ export function ConsultancyWorkspace() {
   const openSpreadsheet = async (document: ProjectDocument) => {
     if (!project) return;
     const file = await readOriginalFile(`${project.environmentId}:${project.id}:${document.id}`);
-    if (file) setOpenedFile(file);
-    else setError("This workbook is stored in the browser where it was added.");
+    if (file) {
+      const key = `workbook:${document.id}`;
+      setTabState((previous) => ({
+        scope: projectScope,
+        open:
+          previous.scope === projectScope && previous.open.some((tab) => tab.key === key)
+            ? previous.open
+            : [
+                ...(previous.scope === projectScope ? previous.open : []),
+                { kind: "workbook", key, name: file.name, file },
+              ],
+        active: key,
+      }));
+    } else setError("This workbook is stored in the browser where it was added.");
   };
 
-  const openWorkbook = useCallback((file: File) => setOpenedFile(file), []);
+  const openFile = useCallback(
+    (path: string) => {
+      if (!projectScope) return;
+      const key = `file:${path}`;
+      setTabState((previous) => ({
+        scope: projectScope,
+        open:
+          previous.scope === projectScope && previous.open.some((tab) => tab.key === key)
+            ? previous.open
+            : [
+                ...(previous.scope === projectScope ? previous.open : []),
+                { kind: "file", key, name: path.split("/").at(-1) ?? path, path },
+              ],
+        active: key,
+      }));
+    },
+    [projectScope],
+  );
+
+  const closeTab = (key: string) => {
+    const dirtyKey = `${projectScope}:${key}`;
+    if (
+      dirtyFileTabs.has(dirtyKey) &&
+      !window.confirm("Close this document and discard unsaved changes?")
+    )
+      return;
+    setDirtyFileTabs((previous) => {
+      if (!previous.has(dirtyKey)) return previous;
+      const next = new Set(previous);
+      next.delete(dirtyKey);
+      return next;
+    });
+    setTabState((previous) => {
+      if (previous.scope !== projectScope) return previous;
+      const index = previous.open.findIndex((tab) => tab.key === key);
+      if (index < 0) return previous;
+      const open = previous.open.filter((tab) => tab.key !== key);
+      return {
+        ...previous,
+        open,
+        active:
+          previous.active === key
+            ? (open[Math.min(index, open.length - 1)]?.key ?? null)
+            : previous.active,
+      };
+    });
+  };
+
+  const askProjectAi = (prompt: string) => {
+    if (!project) return false;
+    void newThread(scopeProjectRef(project.environmentId, project.id))
+      .then((result) => {
+        if (!result) throw new Error("Could not start a project chat.");
+        useComposerDraftStore.getState().setPrompt(result.draftId, prompt);
+      })
+      .catch((cause) =>
+        setError(cause instanceof Error ? cause.message : "Could not start a project chat."),
+      );
+    return true;
+  };
+
+  const askProjectSpreadsheet = async (question: string, agentContext: string, path?: string) => {
+    if (!project) return false;
+    try {
+      const fileKey = path ?? `browser-workbook/${project.id}`;
+      const persist = path !== undefined;
+      const existingTab = tabs.find((tab) => tab.kind === "chat" && tab.fileKey === fileKey);
+      const sidecar = persist
+        ? await readFile({
+            environmentId: project.environmentId,
+            input: { cwd: project.workspaceRoot, relativePath: fileChatSidecarPath(fileKey) },
+          })
+        : null;
+      const existingId =
+        existingTab?.kind === "chat"
+          ? existingTab.threadRef.threadId
+          : sidecar?._tag === "Success"
+            ? parseFileChatSidecar(sidecar.value.contents, fileKey)
+            : null;
+      const result = existingId
+        ? null
+        : await newThread(scopeProjectRef(project.environmentId, project.id), { navigate: false });
+      if (!existingId && !result) throw new Error("Could not start a workbook chat.");
+      if (persist && result) {
+        const saved = await writeFile({
+          environmentId: project.environmentId,
+          input: {
+            cwd: project.workspaceRoot,
+            relativePath: fileChatSidecarPath(fileKey),
+            contents: JSON.stringify({ version: 1, path: fileKey, threadId: result.threadId }),
+          },
+        });
+        if (saved._tag === "Failure") throw errorText(saved);
+      }
+      const threadRef = scopeThreadRef(
+        project.environmentId,
+        (existingId ?? result!.threadId) as ScopedThreadRef["threadId"],
+      );
+      requestDraftAutoSend(result?.draftId ?? threadRef, question);
+      useComposerDraftStore.getState().setPrompt(result?.draftId ?? threadRef, question);
+      const key = `chat:${project.environmentId}:${threadRef.threadId}`;
+      setTabState((previous) => {
+        const open = previous.scope === projectScope ? previous.open : [];
+        return {
+          scope: projectScope,
+          open: open.some((tab) => tab.key === key)
+            ? open.map((tab) =>
+                tab.key === key && tab.kind === "chat"
+                  ? { ...tab, editorContext: agentContext }
+                  : tab,
+              )
+            : [
+                ...open,
+                {
+                  kind: "chat",
+                  key,
+                  name: "Excel chat",
+                  threadRef,
+                  ...(result ? { draftId: result.draftId } : {}),
+                  editorContext: agentContext,
+                  fileKey,
+                },
+              ],
+          active: previous.active ?? key,
+        };
+      });
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not start a project chat.");
+      return false;
+    }
+  };
+
+  const spreadsheetChatTabFor = (fileKey: string) => {
+    const chat = tabs.find((tab) => tab.kind === "chat" && tab.fileKey === fileKey);
+    return chat?.kind === "chat" ? chat : null;
+  };
+
+  const spreadsheetChatFor = (fileKey: string) => {
+    const chat = spreadsheetChatTabFor(fileKey);
+    return chat ? <ProjectChatTab key={chat.key} tab={chat} /> : null;
+  };
 
   const downloadOriginal = async (document: ProjectDocument) => {
     if (!project) return;
@@ -236,175 +558,325 @@ export function ConsultancyWorkspace() {
     }
   };
 
-  if (openedFile)
-    return (
-      <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-        <SpreadsheetFileViewer file={openedFile} onClose={() => setOpenedFile(null)} inline />
-      </SidebarInset>
-    );
-
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-6 py-10">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-primary">
-              Consultancy workspace
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold">
-              {projectIdentity?.name ?? "Customers and projects"}
-            </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {projectIdentity
-                ? `${projectIdentity.customer} · Project files and AI conversations`
-                : "Create a customer project to keep its data, documents, and chats together."}
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setShowCreate(true);
-              setCustomer(projectIdentity?.customer ?? customers[0] ?? "");
-            }}
-          >
-            <PlusIcon /> New project
-          </Button>
-        </div>
-        {error ? (
-          <p
-            role="alert"
-            className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-          >
-            {error}
-          </p>
-        ) : null}
-        {showCreate || !project ? (
-          <section className="mt-8 rounded-xl border border-border bg-card p-6">
-            <h2 className="text-lg font-medium">Create project</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Choose a folder on the connected environment. Files in that folder will appear in this
-              project.
-            </p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Input
-                list="consultancy-customers"
-                placeholder="Customer name"
-                value={customer}
-                onChange={(event) => setCustomer(event.target.value)}
-              />
-              <datalist id="consultancy-customers">
-                {customers.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <Input
-                placeholder="Project name"
-                value={projectName}
-                onChange={(event) => setProjectName(event.target.value)}
-              />
-              <Input
-                className="sm:col-span-2"
-                placeholder="Project folder, e.g. G:\\Consultancy\\Acme\\Market-study"
-                value={folder}
-                onChange={(event) => setFolder(event.target.value)}
-              />
-            </div>
-            <div className="mt-4 flex gap-2">
-              <Button
-                disabled={
-                  busy ||
-                  !environmentId ||
-                  !customer.trim() ||
-                  !projectName.trim() ||
-                  !folder.trim()
-                }
-                onClick={() => void create()}
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+      {project && tabs.length > 0 ? (
+        <div
+          className="flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-muted/30"
+          role="tablist"
+          aria-label={`${projectIdentity?.name ?? "Project"} screens`}
+        >
+          {tabs.map((tab) => (
+            <div
+              key={tab.key}
+              className={`flex max-w-56 shrink-0 items-center border-r border-border ${activeTab === tab.key ? "border-b-2 border-b-primary bg-background" : "text-muted-foreground hover:bg-muted"}`}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.key}
+                aria-label={`Open ${tab.kind === "file" ? tab.path : tab.name}`}
+                className="min-w-0 truncate py-3 pl-4 pr-2 text-left text-sm"
+                onClick={() => setTabState((previous) => ({ ...previous, active: tab.key }))}
               >
-                Create project
-              </Button>
-              {project ? (
-                <Button variant="ghost" onClick={() => setShowCreate(false)}>
-                  Cancel
-                </Button>
-              ) : null}
+                {tab.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Close ${tab.name}`}
+                className="mr-2 rounded p-1 hover:bg-muted"
+                onClick={() => closeTab(tab.key)}
+              >
+                <XIcon className="size-3.5" />
+              </button>
             </div>
-          </section>
-        ) : null}
-        {project && !showCreate ? (
-          <>
-            <ConsultancyProjectFiles
-              key={`${project.environmentId}:${project.id}`}
-              environmentId={project.environmentId}
-              cwd={project.workspaceRoot}
-              onOpenWorkbook={openWorkbook}
-            />
-            {documents.length ? (
-              <section className="mt-8">
-                <h2 className="text-lg font-medium">Previously added files</h2>
-                <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
-                  {documents.map((document) => (
-                    <div
-                      key={document.id}
-                      className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+          ))}
+        </div>
+      ) : null}
+      {project &&
+        tabs.map((tab) => (
+          <div
+            key={tab.key}
+            role="tabpanel"
+            aria-hidden={activeTab !== tab.key}
+            className={activeTab === tab.key ? "flex min-h-0 flex-1 overflow-hidden" : "hidden"}
+          >
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {tab.kind === "chat" ? (
+                activeTab === tab.key ? (
+                  <ProjectChatTab tab={tab} />
+                ) : null
+              ) : tab.kind === "file" ? (
+                <ConsultancyFileViewer
+                  environmentId={project.environmentId}
+                  cwd={project.workspaceRoot}
+                  path={tab.path}
+                  active={activeTab === tab.key}
+                  onAskAi={askProjectAi}
+                  onAskSpreadsheet={askProjectSpreadsheet}
+                  spreadsheetChat={activeTab === tab.key ? spreadsheetChatFor(tab.path) : null}
+                  spreadsheetThreadRef={spreadsheetChatTabFor(tab.path)?.threadRef}
+                  projectId={project.id}
+                  onDirtyChange={(dirty) =>
+                    setDirtyFileTabs((previous) => {
+                      const dirtyKey = `${projectScope}:${tab.key}`;
+                      if (previous.has(dirtyKey) === dirty) return previous;
+                      const next = new Set(previous);
+                      if (dirty) next.add(dirtyKey);
+                      else next.delete(dirtyKey);
+                      return next;
+                    })
+                  }
+                />
+              ) : (
+                <SpreadsheetFileViewer
+                  file={tab.file}
+                  inline
+                  agentChat={
+                    activeTab === tab.key ? spreadsheetChatFor(`browser:${tab.key}`) : null
+                  }
+                  onAskAi={(question, agentContext) =>
+                    askProjectSpreadsheet(question, agentContext, `browser:${tab.key}`)
+                  }
+                />
+              )}
+            </div>
+          </div>
+        ))}
+      <div
+        role={project && activeTab !== null ? "tabpanel" : undefined}
+        aria-hidden={activeTab !== null}
+        className={activeTab === null ? "min-h-0 flex-1 overflow-y-auto" : "hidden"}
+      >
+        <div className="mx-auto w-full max-w-5xl px-6 py-10">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-primary">
+                Consultancy workspace
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold">
+                {projectIdentity?.name ?? "Customers and projects"}
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {projectIdentity
+                  ? `${projectIdentity.customer} · Project files and AI conversations`
+                  : "Create a customer project to keep its data, documents, and chats together."}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCreate(true);
+                setCustomer(projectIdentity?.customer ?? customers[0] ?? "");
+              }}
+            >
+              <PlusIcon /> New project
+            </Button>
+          </div>
+          {error ? (
+            <p
+              role="alert"
+              className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          ) : null}
+          {showCreate || !project ? (
+            <section className="mt-8 rounded-xl border border-border bg-card p-6">
+              <h2 className="text-lg font-medium">Create project</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Choose a parent folder on the connected environment. A dated project folder will be
+                created inside it.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Input
+                  list="consultancy-customers"
+                  placeholder="Customer name"
+                  value={customer}
+                  disabled={pendingSetup !== null}
+                  onChange={(event) => setCustomer(event.target.value)}
+                />
+                <datalist id="consultancy-customers">
+                  {customers.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+                <Input
+                  placeholder="Project name"
+                  value={projectName}
+                  disabled={pendingSetup !== null}
+                  onChange={(event) => setProjectName(event.target.value)}
+                />
+                <div className="flex gap-2 sm:col-span-2">
+                  <Input
+                    aria-label="Parent folder"
+                    placeholder="Parent folder, e.g. G:\\Consultancy\\Acme"
+                    value={folder}
+                    disabled={pendingSetup !== null}
+                    onChange={(event) => setFolder(event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={pendingSetup !== null}
+                    onClick={() => setBrowsePath(ensureBrowseDirectoryPath(folder || "~/"))}
+                  >
+                    Browse
+                  </Button>
+                </div>
+              </div>
+              {browsePath ? (
+                <div className="mt-3 rounded-md border border-border p-3">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      aria-label="Browse path"
+                      value={browsePath}
+                      onChange={(event) => setBrowsePath(event.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!getBrowseParentPath(browsePath)}
+                      onClick={() => setBrowsePath(getBrowseParentPath(browsePath))}
                     >
-                      {document.kind === "spreadsheet" ? (
-                        <FileSpreadsheetIcon className="size-4 text-primary" />
-                      ) : (
-                        <FileTextIcon className="size-4 text-primary" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{document.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {Math.round(document.size / 1024)} KB · {document.kind}
-                        </p>
-                      </div>
-                      {document.kind === "spreadsheet" ? (
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        if (folderQuery.data) {
+                          setFolder(folderQuery.data.parentPath);
+                          setBrowsePath(null);
+                        }
+                      }}
+                      disabled={!folderQuery.data}
+                    >
+                      Use folder
+                    </Button>
+                  </div>
+                  <div className="mt-2 max-h-48 overflow-y-auto">
+                    {folderQuery.data?.entries.map((entry) => (
+                      <button
+                        key={entry.fullPath}
+                        type="button"
+                        className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                        onClick={() => setBrowsePath(ensureBrowseDirectoryPath(entry.fullPath))}
+                      >
+                        {entry.name}
+                      </button>
+                    ))}
+                    {folderQuery.error ? (
+                      <p className="text-sm text-destructive">{folderQuery.error}</p>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              {proposedFolder ? (
+                <p className="mt-3 text-xs text-muted-foreground">New folder: {proposedFolder}</p>
+              ) : null}
+              <div className="mt-4 flex gap-2">
+                <Button
+                  disabled={
+                    busy ||
+                    !environmentId ||
+                    (!pendingSetup && (!customer.trim() || !projectName.trim() || !folder.trim()))
+                  }
+                  onClick={() => void create()}
+                >
+                  {pendingSetup ? "Finish setup" : "Create project"}
+                </Button>
+                {project ? (
+                  <Button
+                    variant="ghost"
+                    disabled={pendingSetup !== null}
+                    onClick={() => setShowCreate(false)}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {project && !showCreate ? (
+            <>
+              <button
+                type="button"
+                onClick={() => void startChat()}
+                className="w-full rounded-xl border border-border bg-card p-5 text-left hover:border-primary/60"
+              >
+                <MessageSquareIcon className="size-5 text-primary" />
+                <h2 className="mt-3 font-medium">Ask AI about this project</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Start a conversation about the files in this project.
+                </p>
+              </button>
+              <ConsultancyProjectFiles
+                key={`${project.environmentId}:${project.id}`}
+                environmentId={project.environmentId}
+                cwd={project.workspaceRoot}
+                onOpenFile={openFile}
+                onAskAi={askProjectAi}
+                onAskSpreadsheet={askProjectSpreadsheet}
+                projectId={project.id}
+              />
+              {documents.length ? (
+                <section className="mt-8">
+                  <h2 className="text-lg font-medium">Previously added files</h2>
+                  <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
+                    {documents.map((document) => (
+                      <div
+                        key={document.id}
+                        className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0"
+                      >
+                        {document.kind === "spreadsheet" ? (
+                          <FileSpreadsheetIcon className="size-4 text-primary" />
+                        ) : (
+                          <FileTextIcon className="size-4 text-primary" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{document.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {Math.round(document.size / 1024)} KB · {document.kind}
+                          </p>
+                        </div>
+                        {document.kind === "spreadsheet" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void openSpreadsheet(document)}
+                          >
+                            Open
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => void openSpreadsheet(document)}
+                          variant="ghost"
+                          onClick={() => void downloadOriginal(document)}
                         >
-                          Open
+                          Download
                         </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void downloadOriginal(document)}
-                      >
-                        Download
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void removeDocument(document)}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => void startChat()}
-              className="mt-8 w-full rounded-xl border border-border bg-card p-5 text-left hover:border-primary/60"
-            >
-              <MessageSquareIcon className="size-5 text-primary" />
-              <h2 className="mt-3 font-medium">Ask AI about this project</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Start a conversation about the files in this project.
-              </p>
-            </button>
-            <div className="mt-8 border-t border-border pt-5">
-              <Button variant="ghost" disabled={busy} onClick={() => void removeProject()}>
-                Remove project
-              </Button>
-            </div>
-          </>
-        ) : null}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => void removeDocument(document)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+              <ProjectUsageTracker environmentId={project.environmentId} projectId={project.id} />
+              <div className="mt-8 border-t border-border pt-5">
+                <Button variant="ghost" disabled={busy} onClick={() => void removeProject()}>
+                  Remove project
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </div>
       </div>
     </SidebarInset>
   );

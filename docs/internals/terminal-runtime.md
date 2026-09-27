@@ -1,7 +1,7 @@
 # Terminal runtime
 
 The environment server owns PTYs, session lifetime, and retained output. Every
-client, including the desktop renderer, attaches through the environment connection.
+web client attaches through the environment connection.
 This lets clients reconnect or share a running session. Renderer choices stay local
 to each client and do not change terminal contracts.
 
@@ -29,8 +29,8 @@ bound during startup.
 
 ## Renderer ownership
 
-Android and web use the same `libghostty-vt` C ABI for terminal behavior. Platform
-adapters own drawing and input integration, and React stays out of terminal frames.
+The web terminal uses the `libghostty-vt` C ABI for terminal behavior. React stays
+out of terminal frames.
 The web adapter shares one WebAssembly instance per browser tab while each terminal
 owns and frees its own handles. The canonical upstream pin is
 [`native/libghostty-vt/VERSION`](../../native/libghostty-vt/VERSION); both native and

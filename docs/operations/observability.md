@@ -99,10 +99,7 @@ npx t3
 node --run dev
 ```
 
-```bash
-node --run dev:desktop
-```
-
+````bash
 ### Option 2: Run With A Local LGTM Stack
 
 #### 1. Start Grafana LGTM
@@ -114,7 +111,7 @@ docker run --name lgtm \
   -p 4318:4318 \
   --rm -ti \
   grafana/otel-lgtm
-```
+````
 
 Then open `http://localhost:3000`.
 
@@ -152,38 +149,6 @@ Monorepo web/server dev:
 ```bash
 node --run dev
 ```
-
-Monorepo desktop dev:
-
-```bash
-node --run dev:desktop
-```
-
-Packaged desktop app:
-
-Launch the actual app executable from the same shell so the desktop app and embedded backend inherit `T3CODE_OTLP_*`.
-
-macOS app bundle example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-"/Applications/T3 Code.app/Contents/MacOS/T3 Code"
-```
-
-Direct binary example:
-
-```bash
-T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
-T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
-./path/to/your/desktop-app-binary
-```
-
-Do not rely on launching from Finder, Spotlight, the dock, or the Start menu after setting shell env vars. Those launches usually will not pick them up.
 
 #### 4. Fully restart after changing env
 
@@ -315,7 +280,7 @@ Recommended flow in Grafana:
 
 Good first searches:
 
-- service name such as `t3-local`, `t3-dev`, or `t3-desktop`
+- service name such as `t3-local` or `t3-dev`
 - span names like `sendTurn` or a Git operation such as `GitVcsDriver.statusDetails.status`
 - Git spans whose `git.operation` attribute identifies the operation
 - orchestration spans with attributes like `orchestration.command_type`
@@ -522,14 +487,6 @@ It provides:
 - optional OTLP log exporter
 - Effect trace-level and timing refs
 
-The desktop main process is a second producer, assembled in
-`apps/desktop/src/app/DesktopObservability.ts`. It reads the same `T3CODE_OTLP_*` names and the same
-Settings entries as the backend it supervises, and covers work the backend cannot see: app startup,
-window and menu handling, backend supervision, and updates. It reports as service `desktop`
-regardless of `T3CODE_OTLP_SERVICE_NAME`, so a collector shows it alongside the backend rather than
-mixed into it. It exports traces and logs only; the main process records no metrics, so the metrics
-endpoint applies to the backend alone.
-
 ### Env Vars
 
 Local trace file:
@@ -552,7 +509,7 @@ OTLP export:
   `OTEL_EXPORTER_OTLP_HEADERS`: comma-separated `key=value` pairs with percent-encoded values.
 - `T3CODE_OTLP_PROTOCOL`: `http/json` (default) or `http/protobuf`
 
-The server and the desktop app also read the standard
+The server also reads the standard
 `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` and generic `OTEL_EXPORTER_OTLP_ENDPOINT` (with
 `/v1/traces`, `/v1/metrics`, or `/v1/logs` appended), for a collector expecting those instead. A
 non-blank `T3CODE_OTLP_*_URL` wins over either, and a per-signal endpoint wins over the generic one
@@ -570,8 +527,8 @@ on stdout only.
 
 ### The Kill Switch
 
-`T3CODE_OTEL_SDK_DISABLED` and `OTEL_SDK_DISABLED` turn off every OTLP export in both the server and
-the desktop main process, overriding any endpoint from the environment or Settings. Local trace
+`T3CODE_OTEL_SDK_DISABLED` and `OTEL_SDK_DISABLED` turn off every OTLP export in the server,
+overriding any endpoint from the environment or Settings. Local trace
 files and stdout logs are unaffected.
 
 `T3CODE_OTEL_SDK_DISABLED` wins when set, so `T3CODE_OTEL_SDK_DISABLED=false` re-enables export on a

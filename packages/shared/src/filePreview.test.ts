@@ -41,6 +41,14 @@ describe("workspace file previews", () => {
     },
   );
 
+  it("allows Word documents from the workspace", () => {
+    expect(isWorkspacePreviewEntryPath("word/Report.docx")).toBe(true);
+    expect(isWorkspacePreviewEntryPath("word/Report.docx.bak")).toBe(false);
+    expect(hostPreviewMimeTypeFromExtension(".docx")).toBe(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+  });
+
   it("serves audio in place from the host like video and browser documents", () => {
     expect(isWorkspaceAudioPreviewPath("notes/recording.WAV")).toBe(true);
     expect(isWorkspaceAudioPreviewPath("recording.wav.ts")).toBe(false);

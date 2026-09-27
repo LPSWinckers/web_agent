@@ -5,16 +5,17 @@ import {
   ChevronDownIcon,
   FileSpreadsheetIcon,
   PlusIcon,
+  UserRoundIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
-import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import { readCustomers, saveCustomers, splitCustomerProject } from "./consultancyData";
+import { requestConsultancyThreadTab } from "./consultancyThreadTabs";
 
 const ACTIVE_PROJECT_KEY = "t3-consultancy-active-project";
 const PENDING_CUSTOMER_KEY = "t3-consultancy-pending-customer";
@@ -57,6 +58,7 @@ export function ConsultancySidebar() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [activeId, setActiveId] = useState(readActiveConsultancyProject);
   const [threadLimit, setThreadLimit] = useState(30);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useEffect(() => {
     const update = () => setActiveId(readActiveConsultancyProject());
     window.addEventListener("consultancy-project-change", update);
@@ -169,17 +171,25 @@ export function ConsultancySidebar() {
                         {activeId === project.id ? (
                           <div className="ml-3 border-l border-sidebar-border pl-2">
                             {projectThreads.slice(0, threadLimit).map((thread) => (
-                              <Link
+                              <button
                                 key={thread.id}
-                                to="/$environmentId/$threadId"
-                                params={buildThreadRouteParams(
-                                  scopeThreadRef(thread.environmentId, thread.id),
-                                )}
-                                onClick={() => selectConsultancyProject(project.id)}
-                                className="block truncate rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                                type="button"
+                                onClick={() => {
+                                  if (readActiveConsultancyProject() !== project.id) {
+                                    selectConsultancyProject(project.id);
+                                  }
+                                  void navigate({ to: "/workbench" }).then(() => {
+                                    requestConsultancyThreadTab({
+                                      projectId: project.id,
+                                      threadRef: scopeThreadRef(thread.environmentId, thread.id),
+                                      title: thread.title,
+                                    });
+                                  });
+                                }}
+                                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
                               >
                                 {thread.title}
-                              </Link>
+                              </button>
                             ))}
                             {projectThreads.length > threadLimit ? (
                               <button
@@ -223,6 +233,40 @@ export function ConsultancySidebar() {
           >
             <PlusIcon /> New chat
           </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          aria-expanded={settingsOpen}
+          aria-controls="workbench-settings-links"
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          <UserRoundIcon /> User settings
+        </Button>
+        {settingsOpen ? (
+          <nav id="workbench-settings-links" aria-label="User settings" className="ml-4">
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              render={<Link to="/settings/company" />}
+            >
+              Company settings
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              render={<Link to="/settings/usage" />}
+            >
+              Usage
+            </Button>
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              render={<Link to="/settings/appearance" />}
+            >
+              Theme
+            </Button>
+          </nav>
         ) : null}
       </div>
     </aside>

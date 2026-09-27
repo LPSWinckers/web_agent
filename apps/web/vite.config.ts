@@ -85,41 +85,19 @@ const unitTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
-function resolveDevProxyTarget(
-  backendPort: string | undefined,
-  wsUrl: string | undefined,
-): string | undefined {
+function resolveDevProxyTarget(backendPort: string | undefined): string | undefined {
   // Browser dev is single-origin: the backend port is proxied through this
-  // server so the app works from any origin (localhost, tailnet, LAN, phone).
-  // T3CODE_PORT is set by scripts/dev-runner.ts for every non-desktop mode.
+  // server so the app works from any origin (localhost, tailnet, LAN).
+  // T3CODE_PORT is set by scripts/dev-runner.ts.
   const port = Number(backendPort?.trim());
   if (Number.isInteger(port) && port > 0) {
     return `http://localhost:${port}/`;
   }
 
-  // dev:desktop still points the renderer straight at the backend, so fall
-  // back to deriving the target from the explicit websocket URL.
-  if (!wsUrl) {
-    return undefined;
-  }
-
-  try {
-    const url = new URL(wsUrl);
-    if (url.protocol === "ws:") {
-      url.protocol = "http:";
-    } else if (url.protocol === "wss:") {
-      url.protocol = "https:";
-    }
-    url.pathname = "";
-    url.search = "";
-    url.hash = "";
-    return url.toString();
-  } catch {
-    return undefined;
-  }
+  return undefined;
 }
 
-const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT, configuredWsUrl);
+const devProxyTarget = resolveDevProxyTarget(process.env.T3CODE_PORT);
 
 // Vite's dev server sends JS uncompressed. On localhost that is free; over a
 // shared origin (tailnet, LAN) it is the whole cold-start: bundled dev serves
@@ -164,7 +142,6 @@ export default defineConfig(() => {
         packageManifests: [
           { bundle: "web", path: new URL("./package.json", import.meta.url) },
           { bundle: "server", path: new URL("../server/package.json", import.meta.url) },
-          { bundle: "desktop", path: new URL("../desktop/package.json", import.meta.url) },
         ],
       }),
       // Route components load as split chunks so settings, pull-request, and
@@ -256,11 +233,9 @@ export default defineConfig(() => {
             ),
           }
         : {}),
-      // Electron's BrowserWindow needs the HMR socket pinned to an explicit
-      // host to connect reliably; dev:desktop is the only mode that sets HOST.
-      // Everywhere else, leaving this unset lets the client derive it from the
-      // page origin, which is what makes HMR work over Tailscale/LAN instead of
-      // failing an attempt against the wrong machine's localhost first.
+      // Leaving this unset lets the client derive it from the page origin,
+      // which makes HMR work over Tailscale/LAN instead of connecting to the
+      // wrong machine's localhost.
       // (Vite 8 logs connection state via console.debug — enable "Verbose".)
       ...(explicitHost
         ? {

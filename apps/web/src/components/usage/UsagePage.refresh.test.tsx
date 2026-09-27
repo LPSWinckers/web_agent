@@ -18,6 +18,12 @@ vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => state.ref
 vi.mock("../../env", () => ({ isElectron: false }));
 vi.mock("../../hooks/useSettings", () => ({ usePrimarySettings: () => "24h" }));
 vi.mock("../../state/usage", () => ({
+  useProjectUsage: () => ({
+    projects: [],
+    isPending: false,
+    failedCount: 0,
+    refresh: async () => undefined,
+  }),
   useUsage: () => ({
     merged: mergeUsage([], USAGE_CONTRACT_VERSION),
     environments: [

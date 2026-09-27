@@ -28,6 +28,8 @@ import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTree
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
+import { useProjects } from "~/state/entities";
+import { PresentationMaker } from "./PresentationMaker";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -107,6 +109,9 @@ export default function FileBrowserPanel({
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
+  const projectId = useProjects().find(
+    (project) => project.environmentId === environmentId && project.workspaceRoot === cwd,
+  )?.id;
   const fileContextMenu = useFileContextMenu(environmentId);
   const {
     entries: directoryEntries,
@@ -498,6 +503,19 @@ export default function FileBrowserPanel({
         data-surface-subheader
       >
         <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
+        <PresentationMaker
+          environmentId={environmentId}
+          cwd={cwd}
+          {...(projectId ? { projectId } : {})}
+          onSaved={(path) => {
+            refresh();
+            onOpenFile(path);
+          }}
+          onOpenInChat={(prompt) => {
+            const composer = composerRef?.current;
+            return composer?.insertTextAtEnd(prompt, { ensureLeadingBoundary: true }) ?? false;
+          }}
+        />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}

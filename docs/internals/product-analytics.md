@@ -10,12 +10,12 @@ visiting the hosted app without connecting does not count as product use.
 ## Attribution boundaries
 
 Client dimensions belong to the event's WebSocket connection. A server-global
-"current client" would misattribute simultaneous web, desktop, and mobile use.
+"current client" would misattribute simultaneous web sessions.
 Provider execution has its own events because a turn can outlive the requesting
 connection.
 
-Keep client and server dimensions separate. A desktop host can serve a phone or a
-remote browser, and a direct connection can cross a network. Older clients omit
+Keep client and server dimensions separate. A server can serve several browsers,
+and a direct connection can cross a network. Older clients omit
 metadata. Missing client values must stay unknown rather than being backfilled
 from server properties. The legacy `clientType` property describes how the server
 runs; use `surface` for the connected client.

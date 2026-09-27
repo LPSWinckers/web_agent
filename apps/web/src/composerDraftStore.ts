@@ -89,6 +89,29 @@ export type DraftThreadEnvMode = typeof DraftThreadEnvModeSchema.Type;
 export const DraftId = Schema.String.pipe(Schema.brand("DraftId"));
 export type DraftId = typeof DraftId.Type;
 
+const pendingDraftAutoSends = new Map<string, string>();
+const autoSendKey = (target: DraftId | ScopedThreadRef) =>
+  typeof target === "string" ? `draft:${target}` : `thread:${scopedThreadKey(target)}`;
+
+export function requestDraftAutoSend(target: DraftId | ScopedThreadRef, prompt: string): void {
+  pendingDraftAutoSends.set(autoSendKey(target), prompt);
+}
+
+export function getDraftAutoSend(target: DraftId | ScopedThreadRef): string | null {
+  return pendingDraftAutoSends.get(autoSendKey(target)) ?? null;
+}
+
+export function takeDraftAutoSend(target: DraftId | ScopedThreadRef): string | null {
+  const key = autoSendKey(target);
+  const prompt = pendingDraftAutoSends.get(key) ?? null;
+  if (prompt !== null) pendingDraftAutoSends.delete(key);
+  return prompt;
+}
+
+export function clearDraftAutoSend(target: DraftId | ScopedThreadRef): void {
+  pendingDraftAutoSends.delete(autoSendKey(target));
+}
+
 const COMPOSER_PERSIST_DEBOUNCE_MS = 300;
 
 // Keep the immutable state until flush. Migration writebacks already have the persisted shape.

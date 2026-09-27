@@ -23,6 +23,14 @@
       "types": "./src/themePreview.ts",
       "import": "./src/themePreview.ts"
     },
+    "./consultancyPresentationStandard": {
+      "types": "./src/consultancyPresentationStandard.ts",
+      "import": "./src/consultancyPresentationStandard.ts"
+    },
+    "./consultancyChart": {
+      "types": "./src/consultancyChart.ts",
+      "import": "./src/consultancyChart.ts"
+    },
     "./projectFavicon": {
       "types": "./src/projectFavicon.ts",
       "import": "./src/projectFavicon.ts"

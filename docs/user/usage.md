@@ -1,7 +1,7 @@
 # Usage and limits
 
-Open **Usage** from the sidebar or the command palette, or press `mod+u` on web and
-desktop when the terminal is not focused. Customize `usage.open` in
+Open **Usage** from the sidebar or the command palette, or press `mod+u` in the web app
+when the terminal is not focused. Customize `usage.open` in
 **Settings → Keybindings**.
 
 ## Understand your usage
@@ -18,7 +18,7 @@ databases, including T3-managed profiles. Set `OPENCODE_DATA_DIR` or `ANTIGRAVIT
 server to read a different data directory; comma-separated paths read multiple directories.
 
 Cursor reads account usage from Cursor's dashboard API using the CLI login saved on the server.
-This includes headless T3 sessions and desktop usage across machines; the same account counts
+This includes headless T3 sessions and agent activity across machines; the same account counts
 once across connected environments. Without an accessible CLI login, T3 shows a
 notice instead of incomplete local totals. T3 does not estimate missing tokens from conversation text.
 On macOS, choose **Enable Cursor usage** on Usage to allow T3 to read your existing CLI login
@@ -31,7 +31,7 @@ variable. Use absolute paths or `~/` paths in the account's environment settings
 environment paths depend on each project's working directory and cannot be reliably discovered
 by Usage. Accounts sharing a history directory count once.
 
-On web and desktop, use the environment dropdown to filter costs, tokens, and limits. All
+On web, use the environment dropdown to filter costs, tokens, and limits. All
 environments are selected by default. The dropdown shows which environments are still scanning;
 results appear as each one responds.
 
@@ -40,7 +40,7 @@ update model pricing.
 
 ## Set custom model prices
 
-On web or desktop, open the environment dropdown on **Usage**, then choose **Model prices** to add,
+On web, open the environment dropdown on **Usage**, then choose **Model prices** to add,
 edit, or reset a model's estimated price. **Apply to** starts with your current Usage filter;
 choose all environments or select individual destinations. Enter the exact model ID and USD
 rates per million input and output tokens. You can enter any model ID, including models
@@ -113,10 +113,3 @@ account and choose **Use reset** to redeem one. No hub plugin is required.
 This connection supplies usage information; configure
 the provider separately to send agent requests through the hub. Remove the hub from the same
 settings section when you no longer need it.
-
-## Subscription usage widget
-
-Add **Subscription usage** from your iOS or Android widget gallery to see remaining Codex and
-Claude quotas. Tap it to open **Usage → Limits**. On iOS, use **Edit Widget** to choose Session,
-Weekly, or both for each provider. Reopen T3 to refresh expired readings. The Android widget
-requires Android 12L or later.

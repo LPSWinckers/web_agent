@@ -5,8 +5,8 @@ hosted app for the first time. Existing workspaces skip this flow.
 
 ## Connect your computers
 
-Select one or more computers to set up. If you opened T3 Code directly from a
-server or the desktop app, that computer is already connected and selected.
+Select one or more computers to set up. If you opened T3 Code from a local
+server, that computer is already connected and selected.
 It is identified by its name, which may differ from the device running your
 browser.
 

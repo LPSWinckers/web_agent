@@ -835,6 +835,7 @@ const make = Effect.gen(function* () {
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
+    readonly agentContext?: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
@@ -886,6 +887,7 @@ const make = Effect.gen(function* () {
     return {
       threadId: input.threadId,
       ...(normalizedInput ? { input: normalizedInput } : {}),
+      ...(input.agentContext !== undefined ? { agentContext: input.agentContext } : {}),
       ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
@@ -1482,6 +1484,9 @@ const make = Effect.gen(function* () {
         text: message.text,
         records: message.context?.records ?? [],
       }),
+      ...(event.payload.agentContext !== undefined
+        ? { agentContext: event.payload.agentContext }
+        : {}),
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

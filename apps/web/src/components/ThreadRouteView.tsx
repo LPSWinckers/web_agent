@@ -44,7 +44,15 @@ import { resolveThreadSyncPhase } from "../threadSync";
  * Rendered by the `_chat` layout rather than by the two leaf routes, since
  * an element only survives a route swap when the same parent renders it.
  */
-export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
+export function ThreadRouteView({
+  target,
+  embedded = false,
+  editorContext,
+}: {
+  target: ThreadRouteTarget;
+  embedded?: boolean;
+  editorContext?: string;
+}) {
   const navigate = useNavigate();
   const draftId = target.kind === "draft" ? target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
@@ -131,7 +139,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   }, [draftSession?.promotedTo, inferredThreadRef]);
 
   useEffect(() => {
-    if (!canonicalThreadRef) {
+    if (!canonicalThreadRef || embedded) {
       return;
     }
     let cancelled = false;
@@ -148,14 +156,14 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     return () => {
       cancelled = true;
     };
-  }, [canonicalThreadRef, navigate]);
+  }, [canonicalThreadRef, embedded, navigate]);
 
   useEffect(() => {
-    if (target.kind !== "draft" || draftSession || canonicalThreadRef) {
+    if (embedded || target.kind !== "draft" || draftSession || canonicalThreadRef) {
       return;
     }
     void navigate({ to: "/", replace: true });
-  }, [canonicalThreadRef, draftSession, navigate, target.kind]);
+  }, [canonicalThreadRef, draftSession, embedded, navigate, target.kind]);
 
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
@@ -167,11 +175,11 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     if (renderState === "missing") {
       const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
       clearPendingFileDropsForThread(target.threadRef);
-      if (environmentHasAnyThreads) {
+      if (environmentHasAnyThreads && !embedded) {
         void navigate({ to: "/", replace: true });
       }
     }
-  }, [bootstrapComplete, environmentHasAnyThreads, navigate, renderState, target]);
+  }, [bootstrapComplete, embedded, environmentHasAnyThreads, navigate, renderState, target]);
 
   useEffect(() => {
     if (target.kind !== "server" || !serverThreadStarted || !draftThread) {
@@ -190,6 +198,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
           environmentId={draftSession.environmentId}
           threadId={draftSession.threadId}
           routeKind="draft"
+          {...(editorContext ? { editorContext } : {})}
           forceExpandedMobileComposer
         />
       );
@@ -201,12 +210,15 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
         environmentId={target.threadRef.environmentId}
         threadId={target.threadRef.threadId}
         routeKind="server"
+        {...(editorContext ? { editorContext } : {})}
         threadSyncPhase={threadSyncPhase}
       />
     );
   }
 
-  return (
+  return embedded ? (
+    <div className="flex h-full min-h-0 flex-1 overflow-hidden">{view}</div>
+  ) : (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
       {view}
     </SidebarInset>

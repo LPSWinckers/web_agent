@@ -443,7 +443,7 @@ export function ExcelWorkbenchPage({
               />
               <FeatureHint
                 title="Get quick answers"
-                description="Ask about record counts, missing values, duplicates, or numeric fields."
+                description="Ask about every sheet, column types, missing values, duplicates, or numeric totals."
               />
             </div>
             <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
@@ -684,7 +684,7 @@ export function ExcelWorkbenchPage({
                   <div className="mb-3">
                     <h2 className="text-sm font-semibold text-foreground">Quick answers</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Ask about counts, data gaps, duplicates, or numeric fields.
+                      Ask about every sheet, column types, data gaps, duplicates, or numeric totals.
                     </p>
                   </div>
                   <form

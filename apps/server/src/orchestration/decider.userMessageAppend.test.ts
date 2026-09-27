@@ -134,4 +134,20 @@ it.layer(NodeServices.layer)("thread.message.user.append", (it) => {
       ]);
     }),
   );
+
+  it.effect("keeps agent file context off the visible user message", () =>
+    Effect.gen(function* () {
+      const readModel = yield* readModelWithThread;
+      const planned = yield* decideOrchestrationCommand({
+        command: { ...turnStartCommand, agentContext: "Edit word/Brief.docx" },
+        readModel,
+      });
+      const events = Array.isArray(planned) ? planned : [planned];
+      const message = events.find((event) => event.type === "thread.message-sent");
+      const providerTurn = events.find((event) => event.type === "thread.turn-start-requested");
+      expect(message?.payload).toMatchObject({ text: "Build it" });
+      expect(message?.payload).not.toHaveProperty("agentContext");
+      expect(providerTurn?.payload).toMatchObject({ agentContext: "Edit word/Brief.docx" });
+    }),
+  );
 });

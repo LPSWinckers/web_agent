@@ -1,0 +1,29 @@
+[data-word-document-page] .tiptap {
+  min-height: 58rem;
+  outline: none;
+  overflow-wrap: anywhere;
+  line-height: 1.65;
+}
+
+[data-word-document-page] .tiptap h1 {
+  color: var(--word-heading);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 1.5rem;
+}
+
+[data-word-document-page] .tiptap h2 {
+  border-bottom: 2px solid var(--word-accent);
+  color: var(--word-heading);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.35rem;
+}
+
+[data-word-document-page] .tiptap p {
+  margin: 0 0 0.9rem;
+  white-space: pre-wrap;
+}

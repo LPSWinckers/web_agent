@@ -23,9 +23,9 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { cn, isMacPlatform } from "../lib/utils";
+import { isMacPlatform } from "../lib/utils";
 import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../hooks/useSettings";
+import { useLegacySidebarEnabled } from "../hooks/useSettings";
 import {
   PanelAnimationSuppressionProvider,
   usePanelAnimationSettings,
@@ -37,7 +37,6 @@ import { ConsultancySidebar } from "./consultancy/ConsultancySidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
-import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import {
   resolveInitialThreadSidebarWidth,
@@ -54,7 +53,6 @@ import {
   useSidebar,
   useSidebarVisibility,
 } from "./ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
 
@@ -83,11 +81,6 @@ function SidebarControl() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
-  const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const stageBackdropVariant = useSidebarStageBackdropVariant(
-    environmentIdentificationMode === "artwork",
-  );
-  const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle");
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -119,33 +112,14 @@ function SidebarControl() {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, toggleSidebar]);
 
+  if (isSidebarVisible) return null;
+
   return (
-    // The right-side layout controls carry mr-px (border compensation inside
-    // the panel), so the trigger mirrors it: both clusters sit one extra pixel
-    // off their edge and the titlebar reads symmetric.
     <div
       className="pointer-events-none fixed left-[var(--workspace-controls-left)] top-[var(--workspace-controls-top)] z-50 ml-px flex h-[var(--workspace-topbar-height)] items-center"
       data-sidebar-control=""
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <SidebarTrigger
-              // Over the stage artwork the trigger is a control on imagery, like the media
-              // viewer's arrows; that variant positions itself, so the layout is reset here.
-              variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
-              className={cn(
-                "pointer-events-auto",
-                isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-              )}
-              aria-label="Toggle main sidebar"
-            />
-          }
-        />
-        <TooltipPopup side="bottom">
-          Toggle main sidebar{shortcutLabel ? ` (${shortcutLabel})` : ""}
-        </TooltipPopup>
-      </Tooltip>
+      <SidebarTrigger className="pointer-events-auto" aria-label="Open main sidebar" />
     </div>
   );
 }

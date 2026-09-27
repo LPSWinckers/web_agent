@@ -360,6 +360,7 @@ export function applyServerSettingsPatch(
     ...(patch.providerInstances !== undefined
       ? { providerInstances: patch.providerInstances }
       : {}),
+    ...(patch.companyLibrary !== undefined ? { companyLibrary: patch.companyLibrary } : {}),
     ...(projectSettingsOverridesPatch !== undefined
       ? {
           projectSettingsOverrides: Object.fromEntries(

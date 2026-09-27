@@ -20,6 +20,48 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("company library settings", () => {
+  it("defaults to an empty server library and accepts edited records", () => {
+    expect(decodeServerSettings({}).companyLibrary.chartTemplates).toEqual([]);
+    expect(decodeServerSettings({}).companyLibrary.wordStandard.sections[0]).toBe("Samenvatting");
+    const patch = decodeServerSettingsPatch({
+      companyLibrary: {
+        companyName: "Acme",
+        guidance: "Use approved colors.",
+        chartTemplates: [{ id: "trend", name: "Monthly trend", instructions: "Use a line chart." }],
+        skills: [],
+        powerpointStandards: [],
+      },
+    });
+    expect(patch.companyLibrary?.chartTemplates[0]?.name).toBe("Monthly trend");
+    expect(patch.companyLibrary?.wordStandard.fontFamily).toBe("Arial");
+  });
+
+  it("validates the company Word theme and structure", () => {
+    const companyLibrary = decodeServerSettings({}).companyLibrary;
+    expect(
+      decodeServerSettingsPatch({
+        companyLibrary: {
+          ...companyLibrary,
+          wordStandard: {
+            ...companyLibrary.wordStandard,
+            headingColor: "123ABC",
+            sections: ["Executive summary", "Recommendations"],
+          },
+        },
+      }).companyLibrary?.wordStandard.sections,
+    ).toEqual(["Executive summary", "Recommendations"]);
+    expect(() =>
+      decodeServerSettingsPatch({
+        companyLibrary: {
+          ...companyLibrary,
+          wordStandard: { ...companyLibrary.wordStandard, accentColor: "not-a-color" },
+        },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("storage cleanup settings", () => {
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();

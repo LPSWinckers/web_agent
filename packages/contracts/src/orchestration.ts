@@ -1327,6 +1327,9 @@ export const ThreadTurnStartCommand = Schema.Struct({
     attachments: Schema.Array(ChatAttachment),
     context: Schema.optional(OrchestrationMessageContext),
   }),
+  agentContext: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
@@ -1349,6 +1352,9 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])),
     context: Schema.optional(OrchestrationMessageContext),
   }),
+  agentContext: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
@@ -1926,6 +1932,9 @@ export const ThreadMessageSentPayload = Schema.Struct({
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
+  agentContext: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),

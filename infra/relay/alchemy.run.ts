@@ -34,15 +34,11 @@ export default Alchemy.Stack(
     const api = yield* Api;
     yield* PublishClientConfig({
       url: api.url,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
       clientTracingUrl: observability.traces.otelTracesEndpoint,
       clientTracingDataset: observability.traces.name,
       clientTracingToken: observability.clientIngestToken.token,
-      tokenDigest: Output.map(
-        Output.all(observability.mobileIngestToken.token, observability.clientIngestToken.token),
-        tokenDigest,
+      tokenDigest: Output.map(observability.clientIngestToken.token, (token) =>
+        tokenDigest([token]),
       ),
     });
 
@@ -54,9 +50,6 @@ export default Alchemy.Stack(
       url: api.url,
       relayApiZoneId: relayApiZone.zoneId,
       managedEndpointZoneId: managedEndpointZone.zoneId,
-      mobileTracingUrl: observability.traces.otelTracesEndpoint,
-      mobileTracingDataset: observability.traces.name,
-      mobileTracingToken: observability.mobileIngestToken.token,
       clientTracingUrl: observability.traces.otelTracesEndpoint,
       clientTracingDataset: observability.traces.name,
       clientTracingToken: observability.clientIngestToken.token,

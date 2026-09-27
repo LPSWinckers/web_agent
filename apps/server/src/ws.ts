@@ -75,6 +75,7 @@ import {
   type TerminalMetadataStreamEvent,
   type PullRequestRef,
   WS_METHODS,
+  UsageReadError,
   WsRpcGroup,
   WORKTREE_SETUP_ACTIVITY_KIND,
   worktreeSetupActivityId,
@@ -149,7 +150,11 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { requiredScopeForRpcMethod, requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
+import {
+  requiredScopeForRpcMethod,
+  requiredScopeForDeviceList,
+  requiredScopeForSettingsPatch,
+} from "./auth/RpcAuthorization.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -157,6 +162,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import { projectUsageRecords } from "./usage/projectUsageRecords.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -2610,18 +2616,21 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
-            Effect.gen(function* () {
-              const deviceHosts = patch.deviceHosts
-                ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
-                    Effect.provide(deviceHostContext),
-                  )
-                : undefined;
-              const settings = yield* serverSettings.updateSettings({
-                ...patch,
-                ...(deviceHosts ? { deviceHosts } : {}),
-              });
-              return ServerSettings.redactServerSettingsForClient(settings);
-            }),
+            authorizeEffect(
+              requiredScopeForSettingsPatch(patch),
+              Effect.gen(function* () {
+                const deviceHosts = patch.deviceHosts
+                  ? yield* remoteSshDeviceHosts(patch.deviceHosts).pipe(
+                      Effect.provide(deviceHostContext),
+                    )
+                  : undefined;
+                const settings = yield* serverSettings.updateSettings({
+                  ...patch,
+                  ...(deviceHosts ? { deviceHosts } : {}),
+                });
+                return ServerSettings.redactServerSettingsForClient(settings);
+              }),
+            ),
             {
               "rpc.aggregate": "server",
             },
@@ -2670,9 +2679,25 @@ const makeWsRpcLayer = (
             },
           ),
         [WS_METHODS.serverGetUsageSummary]: (input) =>
-          observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
-            "rpc.aggregate": "server",
-          }),
+          observeRpcEffect(
+            WS_METHODS.serverGetUsageSummary,
+            input.projectId === undefined
+              ? usage.readSummary(input)
+              : projectionSnapshotQuery.listProjectUsageActivities(input.projectId).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new UsageReadError({
+                        reason: "scanFailed",
+                        detail: "Project usage could not be read.",
+                        cause,
+                      }),
+                  ),
+                  Effect.flatMap((activities) =>
+                    usage.readProjectSummary(input, projectUsageRecords(activities)),
+                  ),
+                ),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverRefreshUsageRates]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
             "rpc.aggregate": "server",

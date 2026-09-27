@@ -72,6 +72,7 @@ export function useNewThreadHandler() {
         envMode?: DraftThreadEnvMode;
         startFromOrigin?: boolean;
         replace?: boolean;
+        navigate?: boolean;
       },
       // Which draft the thread ended up in, so a caller that has something to put in it — a
       // prepared checkout, a task to write — addresses that one rather than looking the project
@@ -89,7 +90,6 @@ export function useNewThreadHandler() {
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
-        setPrompt,
       } = useComposerDraftStore.getState();
       const requestingRouteHref = router.state.location.href;
       const routeChangedSinceRequest = () => router.state.location.href !== requestingRouteHref;
@@ -129,14 +129,6 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      const seedConsultancyPrompt = (draftId: DraftId) => {
-        if (project?.title.includes(" / ") && !getComposerDraft(draftId)?.prompt.trim()) {
-          setPrompt(
-            draftId,
-            "Read the relevant files in this project before answering. Cite the files you use. ",
-          );
-        }
-      };
       // The resolver applies project overrides and, until the server has
       // folded them, the aggregate's own legacy fields.
       const projectSettings = resolveProjectSettings(
@@ -324,15 +316,14 @@ export function useNewThreadHandler() {
             routeTargetAfterWrites?.kind === "draft" &&
             routeTargetAfterWrites.draftId === emptyStoredDraftThread.draftId
           ) {
-            seedConsultancyPrompt(opened.draftId);
             return opened;
           }
-          await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: emptyStoredDraftThread.draftId },
-            replace: options?.replace ?? false,
-          });
-          seedConsultancyPrompt(opened.draftId);
+          if (options?.navigate !== false)
+            await router.navigate({
+              to: "/draft/$draftId",
+              params: { draftId: emptyStoredDraftThread.draftId },
+              replace: options?.replace ?? false,
+            });
           return opened;
         })();
       }
@@ -361,7 +352,6 @@ export function useNewThreadHandler() {
           interactionMode: latestActiveDraftThread.interactionMode,
           ...pickExplicitWorkspaceOptions(options),
         });
-        seedConsultancyPrompt(currentRouteTarget.draftId);
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
           threadId: latestActiveDraftThread.threadId,
@@ -405,12 +395,12 @@ export function useNewThreadHandler() {
             interactionMode: racedDraft.interactionMode,
             ...pickExplicitWorkspaceOptions(options),
           });
-          await router.navigate({
-            to: "/draft/$draftId",
-            params: { draftId: racedDraft.draftId },
-            replace: options?.replace ?? false,
-          });
-          seedConsultancyPrompt(racedDraft.draftId);
+          if (options?.navigate !== false)
+            await router.navigate({
+              to: "/draft/$draftId",
+              params: { draftId: racedDraft.draftId },
+              replace: options?.replace ?? false,
+            });
           return { draftId: racedDraft.draftId, threadId: racedDraft.threadId };
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
@@ -435,12 +425,12 @@ export function useNewThreadHandler() {
           // state. The project default wins when both are present.
           setModelSelection(draftId, modelSelectionOverride, { replaceOptions: true });
         }
-        await router.navigate({
-          to: "/draft/$draftId",
-          params: { draftId },
-          replace: options?.replace ?? false,
-        });
-        seedConsultancyPrompt(draftId);
+        if (options?.navigate !== false)
+          await router.navigate({
+            to: "/draft/$draftId",
+            params: { draftId },
+            replace: options?.replace ?? false,
+          });
         return { draftId, threadId };
       })();
     },

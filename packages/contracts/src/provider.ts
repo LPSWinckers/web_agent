@@ -68,6 +68,9 @@ export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
+  agentContext: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
+  ),
   /** Internal recovery signal. Allows an empty turn only for adapters that
       explicitly support promptless continuation. */
   continuation: Schema.optional(Schema.Boolean),

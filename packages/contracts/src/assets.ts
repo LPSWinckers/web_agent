@@ -190,7 +190,7 @@ export class AssetPreviewTypeValidationError extends Schema.TaggedError<AssetPre
     // Draft resources serve absolute paths through the same host-media
     // validation as media files, so they share its message.
     return this.resource._tag === "media-file" || this.resource._tag === "draft-workspace-file"
-      ? "Only images, videos, audio, HTML, and PDF files can be previewed."
+      ? "This file type cannot be previewed."
       : "Only browser documents and images can be previewed.";
   }
 }

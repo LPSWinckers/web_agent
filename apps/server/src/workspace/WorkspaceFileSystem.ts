@@ -168,7 +168,6 @@ export const make = Effect.gen(function* () {
       workspaceRoot: input.cwd,
       relativePath: input.relativePath,
     });
-
     const realWorkspaceRoot = yield* Effect.tryPromise({
       try: () => NodeFSP.realpath(input.cwd),
       catch: (cause) =>
@@ -309,6 +308,21 @@ export const make = Effect.gen(function* () {
       workspaceRoot: input.cwd,
       relativePath: input.relativePath,
     });
+    if (
+      input.encoding === "base64" &&
+      (input.contents.length > 32 * 1024 * 1024 ||
+        input.contents.length % 4 !== 0 ||
+        !/^[A-Za-z0-9+/]*={0,2}$/.test(input.contents))
+    ) {
+      return yield* new WorkspaceFileSystemOperationError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedPath: target.absolutePath,
+        operationPath: target.absolutePath,
+        operation: "write-file",
+        cause: new Error("Binary file must be valid base64 and under 24 MB."),
+      });
+    }
 
     yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
       Effect.mapError(
@@ -323,7 +337,12 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
+    const bytes = input.encoding === "base64" ? Buffer.from(input.contents, "base64") : null;
+    yield* (
+      bytes
+        ? fileSystem.writeFile(target.absolutePath, bytes)
+        : fileSystem.writeFileString(target.absolutePath, input.contents)
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new WorkspaceFileSystemOperationError({

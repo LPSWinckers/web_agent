@@ -1,6 +1,6 @@
 # T3 Code
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+T3 Code is an open-source web interface for working with coding agents on your machine. Run the T3 CLI server locally and connect through the [web app](https://app.t3.codes) or a browser pointed at your server.
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
 
@@ -38,46 +38,6 @@ Then run `t3` to start the server and open the local web app. `t3 service instal
 
 To try it once without installing, run `npx t3@latest` instead.
 
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
-
-```bash
-sudo apt install ./T3-Code-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
 ## Some notes
 
 We are very very early in this project. Expect bugs.
@@ -92,7 +52,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 - [Permission modes](./docs/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)
 - [Project settings](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
+- [Remote access from another machine](./docs/user/remote-access.md)
 - [Keeping app and server in sync](./docs/user/updating.md)
 - [Source control integrations](./docs/user/source-control.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)

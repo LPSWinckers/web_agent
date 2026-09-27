@@ -1,8 +1,10 @@
 import {
   AuthOrchestrationOperateScope,
+  AuthAccessWriteScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
+  DEFAULT_COMPANY_LIBRARY,
   WS_METHODS,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -12,9 +14,21 @@ import {
   RPC_REQUIRED_SCOPES,
   requiredScopeForRpcMethod,
   requiredScopeForDeviceList,
+  requiredScopeForSettingsPatch,
 } from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("restricts company library edits to administrative sessions", () => {
+    expect(requiredScopeForSettingsPatch({})).toBe(AuthOrchestrationOperateScope);
+    expect(
+      requiredScopeForSettingsPatch({
+        companyLibrary: {
+          ...DEFAULT_COMPANY_LIBRARY,
+          companyName: "Acme",
+        },
+      }),
+    ).toBe(AuthAccessWriteScope);
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });

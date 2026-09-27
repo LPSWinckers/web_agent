@@ -179,6 +179,12 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import {
+  readActiveConsultancyProject,
+  selectConsultancyProject,
+} from "./consultancy/ConsultancySidebar";
+import { splitCustomerProject } from "./consultancy/consultancyData";
+import { requestConsultancyOverview } from "./consultancy/consultancyThreadTabs";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
   pullRequestSurface,
@@ -294,14 +300,17 @@ import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
+  clearDraftAutoSend,
   clearBackgroundDraftSubmissionByRef,
   composerDraftHasUserContent,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
+  getDraftAutoSend,
   markPromotedDraftThreadByRef,
   restoreFailedBackgroundDraftThread,
+  takeDraftAutoSend,
   useComposerDraftStore,
   DraftId,
 } from "../composerDraftStore";
@@ -744,6 +753,7 @@ type ChatViewProps =
   | {
       environmentId: EnvironmentId;
       threadId: ThreadId;
+      editorContext?: string;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
@@ -754,6 +764,7 @@ type ChatViewProps =
   | {
       environmentId: EnvironmentId;
       threadId: ThreadId;
+      editorContext?: string;
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
@@ -1470,6 +1481,7 @@ export default function ChatView(props: ChatViewProps) {
     environmentId,
     threadId,
     routeKind,
+    editorContext,
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
@@ -1549,6 +1561,12 @@ export default function ChatView(props: ChatViewProps) {
   );
   const composerDraftTarget: ScopedThreadRef | DraftId =
     routeKind === "server" ? routeThreadRef : props.draftId;
+  // Only subscribe to prompt edits while an automatic file send is pending.
+  const queuedAutoSendDraftPrompt = useComposerDraftStore((store) =>
+    getDraftAutoSend(composerDraftTarget) !== null
+      ? (store.getComposerDraft(composerDraftTarget)?.prompt ?? null)
+      : null,
+  );
   const draftThread = useComposerDraftStore((store) =>
     routeKind === "server"
       ? store.getDraftSessionByRef(routeThreadRef)
@@ -2148,6 +2166,8 @@ export default function ChatView(props: ChatViewProps) {
     [activeThread?.environmentId, activeThread?.projectId],
   );
   const activeProject = useProject(activeProjectRef);
+  const activeProjectIsConsultancy =
+    activeProject !== null && splitCustomerProject(activeProject) !== null;
   // Environment settings with the active project's overrides applied.
   const activeProjectSettings = useMemo(
     () => resolveProjectSettings(settings, activeProject?.id ?? null, activeProject ?? undefined),
@@ -2267,9 +2287,20 @@ export default function ChatView(props: ChatViewProps) {
     runProjectCloneAction,
   ]);
   const activeProjectDefaultModelSelection = activeProjectSettings.settings.defaultModelSelection;
-  const handleNewThreadInActiveProject = useCallback(() => {
+  const handleProjectClick = useCallback(() => {
+    if (activeProjectIsConsultancy && activeProject) {
+      if (readActiveConsultancyProject() !== activeProject.id) {
+        selectConsultancyProject(activeProject.id);
+      }
+      requestConsultancyOverview({
+        environmentId: activeProject.environmentId,
+        projectId: activeProject.id,
+      });
+      void navigate({ to: "/workbench" });
+      return;
+    }
     startNewThreadForProject(activeProjectRef, handleNewThread);
-  }, [activeProjectRef, handleNewThread]);
+  }, [activeProject, activeProjectIsConsultancy, activeProjectRef, handleNewThread, navigate]);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const activeDraftLogicalProjectKey =
     !isServerThread && activeProject
@@ -8052,6 +8083,7 @@ export default function ChatView(props: ChatViewProps) {
                     ...(context && supportsInlineMessageContext ? { context } : {}),
                   },
                   modelSelection: target.selection,
+                  ...(editorContext ? { agentContext: editorContext } : {}),
                   titleSeed: title,
                   runtimeMode,
                   interactionMode: target.interactionMode,
@@ -8463,6 +8495,7 @@ export default function ChatView(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
+          ...(editorContext ? { agentContext: editorContext } : {}),
           runtimeMode,
           interactionMode: sendInteractionMode,
           ...(bootstrap ? { bootstrap } : {}),
@@ -9089,6 +9122,7 @@ export default function ChatView(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
+            ...(editorContext ? { agentContext: editorContext } : {}),
             runtimeMode,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
@@ -9500,6 +9534,70 @@ export default function ChatView(props: ChatViewProps) {
     workLocallyResendReady,
   ]);
 
+  useEffect(() => {
+    return () => clearDraftAutoSend(composerDraftTarget);
+  }, [composerDraftTarget]);
+
+  useEffect(() => {
+    const expectedPrompt = getDraftAutoSend(composerDraftTarget);
+    if (expectedPrompt === null || queuedAutoSendDraftPrompt === null) return;
+    if (!composerHasUnsentContent) return;
+    const sendContext = composerRef.current?.getSendContext();
+    if (!sendContext) return;
+    if (sendContext.prompt !== expectedPrompt || composerHasNonPromptContent) {
+      clearDraftAutoSend(composerDraftTarget);
+      return;
+    }
+    if (
+      !activeThread ||
+      !sendContext.providerAvailable ||
+      isSendBusy ||
+      isConnecting ||
+      isRevertingCheckpoint ||
+      !clientSettingsHydrated ||
+      threadDetailLoading ||
+      sendInFlightRef.current ||
+      feedbackUploadsInFlightRef.current.has(routeThreadKey) ||
+      needsLoadBalancing ||
+      activeEnvironmentUnavailable ||
+      activePendingProgress ||
+      feedbackUploading
+    ) {
+      return;
+    }
+    if (composerRef.current?.validateProviderInput(expectedPrompt) === false) {
+      clearDraftAutoSend(composerDraftTarget);
+      toastManager.add({
+        type: "error",
+        title: "Workbook context is too large for this chat",
+        description:
+          "The workbook is still in the composer. Shorten the question or split the workbook before sending.",
+      });
+      return;
+    }
+    if (takeDraftAutoSend(composerDraftTarget) !== null) void onSendRef.current();
+  }, [
+    activeEnvironmentUnavailable,
+    activePendingProgress,
+    activeThread,
+    clientSettingsHydrated,
+    composerActiveProvider,
+    composerDraftTarget,
+    composerInteractionMode,
+    composerHasNonPromptContent,
+    composerHasUnsentContent,
+    composerRuntimeMode,
+    feedbackUploading,
+    isConnecting,
+    isRevertingCheckpoint,
+    isSendBusy,
+    needsLoadBalancing,
+    providerStatuses,
+    queuedAutoSendDraftPrompt,
+    routeThreadKey,
+    threadDetailLoading,
+  ]);
+
   const onStartFromOriginChange = (nextStartFromOrigin: boolean) => {
     if (canOverrideServerThreadEnvMode && activeThread) {
       setPendingServerThreadStartFromOriginByThreadId((current) =>
@@ -9786,6 +9884,37 @@ export default function ChatView(props: ChatViewProps) {
               : 0
           }
           onOpenFile={openFileSurface}
+          onAskAi={(prompt) => {
+            const composer = composerRef.current;
+            if (!composer) return false;
+            const draft = composer.getSendContext();
+            if (
+              !draft.providerAvailable ||
+              isSendBusy ||
+              isConnecting ||
+              isRevertingCheckpoint ||
+              !clientSettingsHydrated ||
+              threadDetailLoading ||
+              sendInFlightRef.current ||
+              feedbackUploadsInFlightRef.current.has(routeThreadKey) ||
+              needsLoadBalancing ||
+              activeEnvironmentUnavailable ||
+              activePendingProgress ||
+              feedbackUploading ||
+              draft.prompt.trim() ||
+              draft.images.length > 0 ||
+              draft.files.length > 0 ||
+              draft.terminalContexts.length > 0 ||
+              draft.previewAnnotations.length > 0 ||
+              draft.reviewComments.length > 0
+            ) {
+              return false;
+            }
+            if (!composer.validateProviderInput(prompt)) return false;
+            if (!composer.insertTextAtEnd(prompt, { ensureLeadingBoundary: true })) return false;
+            void onSend();
+            return true;
+          }}
           onPendingChange={handleFilePendingChange}
           selectedFilePending={
             renderedRightPanelSurface.kind === "file" &&
@@ -9862,7 +9991,8 @@ export default function ChatView(props: ChatViewProps) {
             }
             keybindings={keybindings}
             rightPanelOpen={rightPanelOpen}
-            onNewThreadInProject={handleNewThreadInActiveProject}
+            projectClickAction={activeProjectIsConsultancy ? "open-workspace" : "new-thread"}
+            onProjectClick={handleProjectClick}
             {...(activeDraftLogicalProjectKey
               ? { onOpenProjectSettings: handleOpenDraftProjectSettings }
               : {})}

@@ -137,6 +137,9 @@ export function hostPreviewMimeTypeFromExtension(extension: string): string | nu
     (extension.toLowerCase() === ".xlsx"
       ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       : null) ??
+    (extension.toLowerCase() === ".docx"
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : null) ??
     BROWSER_MIME_TYPE_BY_EXTENSION.get(extension.toLowerCase()) ??
     null
   );
@@ -200,6 +203,6 @@ export function isWorkspacePreviewEntryPath(path: string): boolean {
   return (
     isWorkspaceBrowserPreviewPath(path) ||
     isWorkspaceImagePreviewPath(path) ||
-    hasPreviewExtension(path, [".xlsx"])
+    hasPreviewExtension(path, [".xlsx", ".docx"])
   );
 }
