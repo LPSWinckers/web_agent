@@ -126,6 +126,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { withTerminalOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
+import * as ImageBankService from "./imageBank/ImageBankService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
@@ -581,6 +582,7 @@ const makeWsRpcLayer = (
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
       const serverSettings = yield* ServerSettings.ServerSettingsService;
+      const imageBank = yield* ImageBankService.ImageBankService;
       const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
       const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
       const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -2613,6 +2615,26 @@ const makeWsRpcLayer = (
               "rpc.aggregate": "server",
             },
           ),
+        [WS_METHODS.imageBankGetStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.imageBankGetStatus, imageBank.getStatus, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.imageBankStartLogin]: (_input) =>
+          observeRpcEffect(WS_METHODS.imageBankStartLogin, imageBank.startLogin, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.imageBankPollLogin]: (_input) =>
+          observeRpcEffect(WS_METHODS.imageBankPollLogin, imageBank.pollLogin, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.imageBankTestConnection]: (_input) =>
+          observeRpcEffect(WS_METHODS.imageBankTestConnection, imageBank.testConnection, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.imageBankDisconnect]: (_input) =>
+          observeRpcEffect(WS_METHODS.imageBankDisconnect, imageBank.disconnect, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverUpdateSettings]: ({ patch }) =>
           observeRpcEffect(
             WS_METHODS.serverUpdateSettings,
@@ -3906,6 +3928,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
                   ),
                 ),
               ),
+              Layer.provide(ImageBankService.layer),
             ),
           ),
         );

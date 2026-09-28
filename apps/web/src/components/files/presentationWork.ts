@@ -1,6 +1,13 @@
 import type { PresentationChart, PresentationDeck } from "./presentationDeck";
+import type { PresentationExportImage } from "./presentationExport";
 
-type WorkRequest = { type: "chart"; file: File } | { type: "export"; deck: PresentationDeck };
+type WorkRequest =
+  | { type: "chart"; file: File }
+  | {
+      type: "export";
+      deck: PresentationDeck;
+      images: Readonly<Record<string, PresentationExportImage>>;
+    };
 
 function work<T>(request: WorkRequest): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -24,4 +31,7 @@ function work<T>(request: WorkRequest): Promise<T> {
 
 export const importPresentationChart = (file: File) =>
   work<PresentationChart>({ type: "chart", file });
-export const buildPresentation = (deck: PresentationDeck) => work<string>({ type: "export", deck });
+export const buildPresentation = (
+  deck: PresentationDeck,
+  images: Readonly<Record<string, PresentationExportImage>> = {},
+) => work<string>({ type: "export", deck, images });

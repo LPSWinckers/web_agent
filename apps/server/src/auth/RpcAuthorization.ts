@@ -54,6 +54,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverRemoveKeybinding]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetSettings]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateSettings]: AuthOrchestrationOperateScope,
+  [WS_METHODS.imageBankGetStatus]: AuthAccessReadScope,
+  [WS_METHODS.imageBankStartLogin]: AuthAccessWriteScope,
+  [WS_METHODS.imageBankPollLogin]: AuthAccessWriteScope,
+  [WS_METHODS.imageBankTestConnection]: AuthAccessWriteScope,
+  [WS_METHODS.imageBankDisconnect]: AuthAccessWriteScope,
   [WS_METHODS.serverDiscoverSourceControl]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetTraceDiagnostics]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProcessDiagnostics]: AuthOrchestrationReadScope,
@@ -192,4 +197,8 @@ export const requiredScopeForDeviceList = (input: DeviceListInput): AuthEnvironm
     : AuthOrchestrationReadScope;
 
 export const requiredScopeForSettingsPatch = (patch: ServerSettingsPatch): AuthEnvironmentScope =>
-  patch.companyLibrary === undefined ? AuthOrchestrationOperateScope : AuthAccessWriteScope;
+  patch.companyLibrary === undefined &&
+  patch.imageBank === undefined &&
+  patch.agentWorkspaces === undefined
+    ? AuthOrchestrationOperateScope
+    : AuthAccessWriteScope;

@@ -1,4 +1,9 @@
-import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import type {
+  AgentWorkspaceProfileSettings,
+  EnvironmentId,
+  ProjectId,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { ChevronLeftIcon, FolderIcon, FileSpreadsheetIcon, FileTextIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -40,6 +45,38 @@ const WordDocumentEditor = lazy(() =>
   })),
 );
 
+function ApplicationFileLayout({
+  children,
+  chat,
+  onStart,
+}: {
+  children: ReactNode;
+  chat?: ReactNode;
+  onStart: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">{children}</main>
+      <aside className="flex min-h-52 flex-col border-t border-border lg:w-[min(42%,34rem)] lg:border-l lg:border-t-0">
+        <div className="border-b border-border px-4 py-3">
+          <h2 className="text-sm font-semibold">Application agent</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Read-only file questions</p>
+        </div>
+        {chat ?? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 p-5 text-center">
+            <p className="text-sm text-muted-foreground">
+              Ask about this file. The agent is instructed to read without changing project files.
+            </p>
+            <Button size="sm" variant="outline" onClick={onStart}>
+              Open application agent
+            </Button>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
 export function ConsultancyFileViewer({
   environmentId,
   cwd,
@@ -50,6 +87,10 @@ export function ConsultancyFileViewer({
   projectId,
   onDirtyChange,
   spreadsheetChat,
+  applicationChat,
+  onStartApplicationAgent,
+  excelAgentProfile,
+  powerpointAgentProfile,
   spreadsheetThreadRef,
 }: {
   environmentId: EnvironmentId;
@@ -57,14 +98,13 @@ export function ConsultancyFileViewer({
   path: string;
   active?: boolean;
   onAskAi: (prompt: string) => boolean;
-  onAskSpreadsheet: (
-    question: string,
-    agentContext: string,
-    path?: string,
-  ) => boolean | Promise<boolean>;
   projectId: ProjectId;
   onDirtyChange?: (dirty: boolean) => void;
   spreadsheetChat?: ReactNode;
+  applicationChat?: ReactNode;
+  onStartApplicationAgent: () => void;
+  excelAgentProfile: AgentWorkspaceProfileSettings;
+  powerpointAgentProfile: AgentWorkspaceProfileSettings;
   spreadsheetThreadRef?: ScopedThreadRef | undefined;
 }) {
   const name = path.split("/").at(-1) ?? path;
@@ -174,6 +214,7 @@ export function ConsultancyFileViewer({
           file={workbook}
           inline
           agentChat={spreadsheetChat}
+          workspaceProfile={excelAgentProfile}
           onDirtyChange={setWorkbookDirty}
           onAskAi={(question, agentContext) => onAskSpreadsheet(question, agentContext, path)}
           sourcePath={`${cwd}/${path}`}
@@ -206,22 +247,27 @@ export function ConsultancyFileViewer({
             cwd={cwd}
             onAskAi={onAskAi}
             projectId={projectId}
+            agentProfile={powerpointAgentProfile}
           />
         </div>
       );
     return (
-      <div className="h-full overflow-auto p-5">
-        {textQuery.data.truncated ? (
-          <p className="mb-4 text-sm text-muted-foreground">Showing the beginning of this file.</p>
-        ) : null}
-        {MARKDOWN.test(path) ? (
-          <ChatMarkdown text={textQuery.data.contents} cwd={cwd} />
-        ) : (
-          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">
-            {textQuery.data.contents}
-          </pre>
-        )}
-      </div>
+      <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
+        <div className="h-full overflow-auto p-5">
+          {textQuery.data.truncated ? (
+            <p className="mb-4 text-sm text-muted-foreground">
+              Showing the beginning of this file.
+            </p>
+          ) : null}
+          {MARKDOWN.test(path) ? (
+            <ChatMarkdown text={textQuery.data.contents} cwd={cwd} />
+          ) : (
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">
+              {textQuery.data.contents}
+            </pre>
+          )}
+        </div>
+      </ApplicationFileLayout>
     );
   }
 
@@ -235,6 +281,7 @@ export function ConsultancyFileViewer({
           cwd={cwd}
           onAskAi={onAskAi}
           projectId={projectId}
+          agentProfile={powerpointAgentProfile}
         />
       </div>
     );
@@ -256,33 +303,43 @@ export function ConsultancyFileViewer({
 
   if (asset._tag === "Failure" || loadError)
     return (
-      <p className="p-5 text-sm text-destructive">{loadError || "Could not open this file."}</p>
+      <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
+        <p className="p-5 text-sm text-destructive">{loadError || "Could not open this file."}</p>
+      </ApplicationFileLayout>
     );
   if (asset._tag !== "Success")
-    return <p className="p-5 text-sm text-muted-foreground">Opening file…</p>;
+    return (
+      <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
+        <p className="p-5 text-sm text-muted-foreground">Opening file…</p>
+      </ApplicationFileLayout>
+    );
   if (/\.pdf$/i.test(path))
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
         <BrowserDocumentFrame src={asset.url} title={name} pdf />
-      </div>
+      </ApplicationFileLayout>
     );
   if (IMAGE.test(path))
     return (
-      <img
-        src={asset.url}
-        alt={name}
-        className="mx-auto max-h-full max-w-full object-contain p-5"
-      />
+      <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
+        <img
+          src={asset.url}
+          alt={name}
+          className="mx-auto max-h-full max-w-full object-contain p-5"
+        />
+      </ApplicationFileLayout>
     );
   if (SPREADSHEET.test(path))
     return <p className="p-5 text-sm text-muted-foreground">Opening workbook…</p>;
   return (
-    <div className="p-5 text-sm">
-      <p className="text-muted-foreground">Preview is unavailable for this file type.</p>
-      <a className="mt-3 inline-block text-primary underline" href={asset.url} download={name}>
-        Download file
-      </a>
-    </div>
+    <ApplicationFileLayout chat={applicationChat} onStart={onStartApplicationAgent}>
+      <div className="p-5 text-sm">
+        <p className="text-muted-foreground">Preview is unavailable for this file type.</p>
+        <a className="mt-3 inline-block text-primary underline" href={asset.url} download={name}>
+          Download file
+        </a>
+      </div>
+    </ApplicationFileLayout>
   );
 }
 
@@ -292,6 +349,7 @@ export function ConsultancyProjectFiles({
   onOpenFile,
   onAskAi,
   projectId,
+  powerpointAgentProfile,
 }: {
   environmentId: EnvironmentId;
   cwd: string;
@@ -303,6 +361,7 @@ export function ConsultancyProjectFiles({
     path?: string,
   ) => boolean | Promise<boolean>;
   projectId: ProjectId;
+  powerpointAgentProfile: AgentWorkspaceProfileSettings;
 }) {
   const { entries, load, refresh, ready, error, isPending } = useDirectoryEntries(
     environmentId,
@@ -426,6 +485,7 @@ export function ConsultancyProjectFiles({
             buttonLabel="New presentation"
             onOpenInChat={onAskAi}
             projectId={projectId}
+            agentProfile={powerpointAgentProfile}
             onSaved={(path) => {
               refresh();
               setFolder("powerpoints");

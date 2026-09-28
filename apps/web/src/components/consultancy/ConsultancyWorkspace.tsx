@@ -1,5 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   FileSpreadsheetIcon,
@@ -26,6 +27,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { filesystemEnvironment } from "~/state/filesystem";
+import { environmentServerConfigsAtom } from "~/state/server";
 import {
   ensureBrowseDirectoryPath,
   getBrowseParentPath,
@@ -54,6 +56,11 @@ import {
   takeConsultancyThreadTabRequests,
   type ShowConsultancyOverviewDetail,
 } from "./consultancyThreadTabs";
+import {
+  agentWorkspaceContext,
+  defaultAgentWorkspaceProfiles,
+  type AgentWorkspaceKind,
+} from "../agentWorkspaces";
 
 const MANIFEST_PATH = "consultancy/project.json";
 
@@ -66,6 +73,7 @@ type ProjectTab =
       name: string;
       threadRef: ScopedThreadRef;
       draftId?: DraftId;
+      agentKind: AgentWorkspaceKind;
       editorContext?: string;
       fileKey?: string;
     };
@@ -94,6 +102,7 @@ function ProjectChatTab({ tab }: { tab: Extract<ProjectTab, { kind: "chat" }> })
 
 export function ConsultancyWorkspace() {
   const projects = useProjects();
+  const environmentServerConfigs = useAtomValue(environmentServerConfigsAtom);
   const environmentId = usePrimaryEnvironmentId();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
@@ -125,6 +134,11 @@ export function ConsultancyWorkspace() {
   );
   const [customersVersion, setCustomersVersion] = useState(0);
   const project = projects.find((entry) => entry.id === selectedId) ?? null;
+  const agentProfiles = defaultAgentWorkspaceProfiles(
+    project
+      ? environmentServerConfigs.get(project.environmentId)?.settings.agentWorkspaces
+      : undefined,
+  );
   const projectScope = project ? `${project.environmentId}:${project.id}` : "";
   const tabs = tabState.scope === projectScope ? tabState.open : [];
   const activeTab = tabState.scope === projectScope ? tabState.active : null;
@@ -212,7 +226,16 @@ export function ConsultancyWorkspace() {
             scope: detailProjectScope,
             open: existing
               ? open
-              : [...open, { kind: "chat", key, name: detail.title, threadRef: detail.threadRef }],
+              : [
+                  ...open,
+                  {
+                    kind: "chat",
+                    key,
+                    name: detail.title,
+                    threadRef: detail.threadRef,
+                    agentKind: "general",
+                  },
+                ],
             active: key,
           };
         });
@@ -407,42 +430,39 @@ export function ConsultancyWorkspace() {
     });
   };
 
-  const askProjectAi = (prompt: string) => {
-    if (!project) return false;
-    void newThread(scopeProjectRef(project.environmentId, project.id))
-      .then((result) => {
-        if (!result) throw new Error("Could not start a project chat.");
-        useComposerDraftStore.getState().setPrompt(result.draftId, prompt);
-      })
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : "Could not start a project chat."),
-      );
-    return true;
-  };
-
-  const askProjectSpreadsheet = async (question: string, agentContext: string, path?: string) => {
+  const openAgentChat = async (input: {
+    kind: AgentWorkspaceKind;
+    title: string;
+    agentContext: string;
+    prompt?: string;
+    fileKey?: string;
+    activate?: boolean;
+  }) => {
     if (!project) return false;
     try {
-      const fileKey = path ?? `browser-workbook/${project.id}`;
-      const persist = path !== undefined;
-      const existingTab = tabs.find((tab) => tab.kind === "chat" && tab.fileKey === fileKey);
-      const sidecar = persist
-        ? await readFile({
-            environmentId: project.environmentId,
-            input: { cwd: project.workspaceRoot, relativePath: fileChatSidecarPath(fileKey) },
-          })
-        : null;
-      const existingId =
-        existingTab?.kind === "chat"
-          ? existingTab.threadRef.threadId
-          : sidecar?._tag === "Success"
-            ? parseFileChatSidecar(sidecar.value.contents, fileKey)
-            : null;
+      const { kind, title, agentContext, prompt, fileKey } = input;
+      const persist =
+        kind !== "application" && fileKey !== undefined && !fileKey.startsWith("browser:");
+      const existingTab = tabs.find(
+        (tab) => tab.kind === "chat" && tab.agentKind === kind && tab.fileKey === fileKey,
+      );
+      const sidecar =
+        fileKey !== undefined && persist
+          ? await readFile({
+              environmentId: project.environmentId,
+              input: { cwd: project.workspaceRoot, relativePath: fileChatSidecarPath(fileKey) },
+            })
+          : null;
+      const sidecarId =
+        sidecar?._tag === "Success" && fileKey !== undefined
+          ? parseFileChatSidecar(sidecar.value.contents, fileKey)
+          : null;
+      const existingId = existingTab?.kind === "chat" ? existingTab.threadRef.threadId : sidecarId;
       const result = existingId
         ? null
         : await newThread(scopeProjectRef(project.environmentId, project.id), { navigate: false });
-      if (!existingId && !result) throw new Error("Could not start a workbook chat.");
-      if (persist && result) {
+      if (!existingId && !result) throw new Error(`Could not start the ${title.toLowerCase()}.`);
+      if (persist && fileKey !== undefined && result) {
         const saved = await writeFile({
           environmentId: project.environmentId,
           input: {
@@ -457,8 +477,13 @@ export function ConsultancyWorkspace() {
         project.environmentId,
         (existingId ?? result!.threadId) as ScopedThreadRef["threadId"],
       );
-      requestDraftAutoSend(result?.draftId ?? threadRef, question);
-      useComposerDraftStore.getState().setPrompt(result?.draftId ?? threadRef, question);
+      const runtimeMode =
+        kind === "application" ? "approval-required" : agentProfiles[kind].runtimeMode;
+      useComposerDraftStore.getState().setRuntimeMode(result?.draftId ?? threadRef, runtimeMode);
+      if (prompt) {
+        requestDraftAutoSend(result?.draftId ?? threadRef, prompt);
+        useComposerDraftStore.getState().setPrompt(result?.draftId ?? threadRef, prompt);
+      }
       const key = `chat:${project.environmentId}:${threadRef.threadId}`;
       setTabState((previous) => {
         const open = previous.scope === projectScope ? previous.open : [];
@@ -467,7 +492,7 @@ export function ConsultancyWorkspace() {
           open: open.some((tab) => tab.key === key)
             ? open.map((tab) =>
                 tab.key === key && tab.kind === "chat"
-                  ? { ...tab, editorContext: agentContext }
+                  ? { ...tab, agentKind: kind, editorContext: agentContext, name: title }
                   : tab,
               )
             : [
@@ -475,30 +500,75 @@ export function ConsultancyWorkspace() {
                 {
                   kind: "chat",
                   key,
-                  name: "Excel chat",
+                  name: title,
                   threadRef,
+                  agentKind: kind,
                   ...(result ? { draftId: result.draftId } : {}),
                   editorContext: agentContext,
-                  fileKey,
+                  ...(fileKey !== undefined ? { fileKey } : {}),
                 },
               ],
-          active: previous.active ?? key,
+          active: input.activate ? key : previous.active,
         };
       });
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start a project chat.");
+      setError(cause instanceof Error ? cause.message : `Could not start the ${input.title}.`);
       return false;
     }
   };
 
-  const spreadsheetChatTabFor = (fileKey: string) => {
-    const chat = tabs.find((tab) => tab.kind === "chat" && tab.fileKey === fileKey);
+  const askProjectAi = (prompt: string) => {
+    void openAgentChat({
+      kind: "general",
+      title: "General agent",
+      agentContext: agentWorkspaceContext("general", agentProfiles.general),
+      prompt,
+      activate: true,
+    });
+    return Boolean(project);
+  };
+
+  const startChat = async () => {
+    if (!project) return;
+    await openAgentChat({
+      kind: "general",
+      title: "General agent",
+      agentContext: agentWorkspaceContext("general", agentProfiles.general),
+      activate: true,
+    });
+  };
+
+  const askProjectSpreadsheet = (question: string, agentContext: string, path?: string) =>
+    openAgentChat({
+      kind: "excel",
+      title: "Excel agent",
+      agentContext,
+      prompt: question,
+      fileKey: path ?? `browser:${project?.id ?? "workbook"}`,
+    });
+
+  const startApplicationAgent = (path: string) =>
+    openAgentChat({
+      kind: "application",
+      title: "Application agent",
+      agentContext: agentWorkspaceContext(
+        "application",
+        agentProfiles.application,
+        `Open file path: ${JSON.stringify(path)}. Read the file from the project workspace before answering.`,
+      ),
+      fileKey: path,
+    });
+
+  const agentChatTabFor = (fileKey: string, kind: AgentWorkspaceKind) => {
+    const chat = tabs.find(
+      (tab) => tab.kind === "chat" && tab.fileKey === fileKey && tab.agentKind === kind,
+    );
     return chat?.kind === "chat" ? chat : null;
   };
 
-  const spreadsheetChatFor = (fileKey: string) => {
-    const chat = spreadsheetChatTabFor(fileKey);
+  const agentChatFor = (fileKey: string, kind: AgentWorkspaceKind) => {
+    const chat = agentChatTabFor(fileKey, kind);
     return chat ? <ProjectChatTab key={chat.key} tab={chat} /> : null;
   };
 
@@ -515,16 +585,6 @@ export function ConsultancyWorkspace() {
     link.download = file.name;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-  };
-
-  const startChat = async () => {
-    if (!project) return;
-    setError("");
-    try {
-      await newThread(scopeProjectRef(project.environmentId, project.id));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start a chat.");
-    }
   };
 
   const removeProject = async () => {
@@ -614,8 +674,14 @@ export function ConsultancyWorkspace() {
                   active={activeTab === tab.key}
                   onAskAi={askProjectAi}
                   onAskSpreadsheet={askProjectSpreadsheet}
-                  spreadsheetChat={activeTab === tab.key ? spreadsheetChatFor(tab.path) : null}
-                  spreadsheetThreadRef={spreadsheetChatTabFor(tab.path)?.threadRef}
+                  spreadsheetChat={activeTab === tab.key ? agentChatFor(tab.path, "excel") : null}
+                  spreadsheetThreadRef={agentChatTabFor(tab.path, "excel")?.threadRef}
+                  applicationChat={
+                    activeTab === tab.key ? agentChatFor(tab.path, "application") : null
+                  }
+                  onStartApplicationAgent={() => void startApplicationAgent(tab.path)}
+                  excelAgentProfile={agentProfiles.excel}
+                  powerpointAgentProfile={agentProfiles.powerpoint}
                   projectId={project.id}
                   onDirtyChange={(dirty) =>
                     setDirtyFileTabs((previous) => {
@@ -633,8 +699,9 @@ export function ConsultancyWorkspace() {
                   file={tab.file}
                   inline
                   agentChat={
-                    activeTab === tab.key ? spreadsheetChatFor(`browser:${tab.key}`) : null
+                    activeTab === tab.key ? agentChatFor(`browser:${tab.key}`, "excel") : null
                   }
+                  workspaceProfile={agentProfiles.excel}
                   onAskAi={(question, agentContext) =>
                     askProjectSpreadsheet(question, agentContext, `browser:${tab.key}`)
                   }
@@ -816,7 +883,7 @@ export function ConsultancyWorkspace() {
                 cwd={project.workspaceRoot}
                 onOpenFile={openFile}
                 onAskAi={askProjectAi}
-                onAskSpreadsheet={askProjectSpreadsheet}
+                powerpointAgentProfile={agentProfiles.powerpoint}
                 projectId={project.id}
               />
               {documents.length ? (

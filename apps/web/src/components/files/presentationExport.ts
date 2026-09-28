@@ -56,7 +56,30 @@ function addBody(
   });
 }
 
-function addSlide(pptx: PptxGen, item: PresentationSlide, index: number) {
+export interface PresentationExportImage {
+  data: string;
+  width: number;
+  height: number;
+}
+
+function imageBox(image: PresentationExportImage, x: number, y: number, w: number, h: number) {
+  const scale = Math.min(w / image.width, h / image.height);
+  const imageWidth = image.width * scale;
+  const imageHeight = image.height * scale;
+  return {
+    x: x + (w - imageWidth) / 2,
+    y: y + (h - imageHeight) / 2,
+    w: imageWidth,
+    h: imageHeight,
+  };
+}
+
+function addSlide(
+  pptx: PptxGen,
+  item: PresentationSlide,
+  index: number,
+  images: Readonly<Record<string, PresentationExportImage>>,
+) {
   const slide = pptx.addSlide();
   const headline = item.layout === "cover" || item.layout === "section";
   slide.background = { color: headline ? colors.navy : style.background };
@@ -177,6 +200,10 @@ function addSlide(pptx: PptxGen, item: PresentationSlide, index: number) {
       },
     );
     if (item.body) text(slide, item.body, 0.89, 6.32, 11.4, 0.37, 12, style.foreground);
+  } else if (item.layout === "content" && item.image && images[item.image.path]) {
+    addBody(slide, item.body, 0.89, 2.12, 5.55, 4.4, style.foreground);
+    const image = images[item.image.path]!;
+    slide.addImage({ data: image.data, ...imageBox(image, 6.8, 2.02, 5.72, 4.55) });
   } else {
     addBody(slide, item.body, 0.89, 2.12, 11.55, 4.4, style.foreground);
   }
@@ -194,10 +221,17 @@ function addSlide(pptx: PptxGen, item: PresentationSlide, index: number) {
   if (source)
     text(slide, `Bron: ${source}`, 0.87, 6.97, 10.65, 0.2, 8, headline ? "C7D7EA" : style.muted);
   text(slide, `${index + 1}`, 12.05, 7.01, 0.45, 0.2, 9, headline ? "C7D7EA" : style.muted);
-  slide.addNotes(source ? `Bron: ${source}` : item.body);
+  const notes = [source ? `Bron: ${source}` : item.body];
+  if (item.image?.sourceUrl) notes.push(`Afbeeldingsbron: ${item.image.sourceUrl}`);
+  if (item.image?.restrictions?.length)
+    notes.push(`Gebruiksbeperking: ${item.image.restrictions.join(", ")}`);
+  slide.addNotes(notes.join("\n"));
 }
 
-export async function exportPresentation(deck: PresentationDeck): Promise<string> {
+export async function exportPresentation(
+  deck: PresentationDeck,
+  images: Readonly<Record<string, PresentationExportImage>> = {},
+): Promise<string> {
   const { default: pptxgen } = await import("pptxgenjs");
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
@@ -205,7 +239,7 @@ export async function exportPresentation(deck: PresentationDeck): Promise<string
   pptx.subject = deck.title;
   pptx.title = deck.title;
   pptx.theme = { headFontFace: style.fontFace, bodyFontFace: style.fontFace };
-  deck.slides.forEach((slide, index) => addSlide(pptx, slide, index));
+  deck.slides.forEach((slide, index) => addSlide(pptx, slide, index, images));
   const result = await pptx.write({ outputType: "base64", compression: true });
   if (typeof result !== "string")
     throw new Error("PowerPoint export returned an unexpected result.");

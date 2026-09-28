@@ -41,6 +41,7 @@ import {
   type ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
+import { DEFAULT_IMAGE_BANK_SETTINGS, ImageBankSettings } from "./imageBank.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1128,6 +1129,30 @@ export const CompanyLibrary = Schema.Struct({
 });
 export type CompanyLibrary = typeof CompanyLibrary.Type;
 
+/** Settings shared by the project and file-specific agent workspaces. */
+export const AgentWorkspaceProfileSettings = Schema.Struct({
+  runtimeMode: RuntimeMode,
+  instructions: TrimmedString.check(Schema.isMaxLength(4_000)),
+});
+export type AgentWorkspaceProfileSettings = typeof AgentWorkspaceProfileSettings.Type;
+
+export const AgentWorkspacesSettings = Schema.Struct({
+  general: AgentWorkspaceProfileSettings,
+  excel: AgentWorkspaceProfileSettings,
+  powerpoint: AgentWorkspaceProfileSettings,
+  word: AgentWorkspaceProfileSettings,
+  application: AgentWorkspaceProfileSettings,
+});
+export type AgentWorkspacesSettings = typeof AgentWorkspacesSettings.Type;
+
+export const DEFAULT_AGENT_WORKSPACES_SETTINGS: AgentWorkspacesSettings = {
+  general: { runtimeMode: "full-access", instructions: "" },
+  excel: { runtimeMode: "approval-required", instructions: "" },
+  powerpoint: { runtimeMode: "approval-required", instructions: "" },
+  word: { runtimeMode: "approval-required", instructions: "" },
+  application: { runtimeMode: "approval-required", instructions: "" },
+};
+
 export const DEFAULT_COMPANY_LIBRARY: CompanyLibrary = {
   companyName: "",
   guidance: "",
@@ -1138,6 +1163,12 @@ export const DEFAULT_COMPANY_LIBRARY: CompanyLibrary = {
 };
 
 export const ServerSettings = Schema.Struct({
+  imageBank: ImageBankSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_IMAGE_BANK_SETTINGS)),
+  ),
+  agentWorkspaces: AgentWorkspacesSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AGENT_WORKSPACES_SETTINGS)),
+  ),
   companyLibrary: CompanyLibrary.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_COMPANY_LIBRARY)),
   ),
@@ -1501,6 +1532,8 @@ const OpenCodeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  imageBank: Schema.optionalKey(ImageBankSettings),
+  agentWorkspaces: Schema.optionalKey(AgentWorkspacesSettings),
   companyLibrary: Schema.optionalKey(CompanyLibrary),
   worktreeCleanup: Schema.optionalKey(
     Schema.NullOr(

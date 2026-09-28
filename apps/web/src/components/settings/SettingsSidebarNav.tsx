@@ -79,6 +79,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
   "/settings/general": Settings2Icon,
+  "/settings/agent-workspaces": BotIcon,
   "/settings/company": Building2Icon,
   "/settings/appearance": PaletteIcon,
   "/settings/projects": PanelsTopLeftIcon,

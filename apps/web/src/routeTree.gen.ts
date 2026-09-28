@@ -33,6 +33,7 @@ import { Route as SettingsConnectionsRouteImport } from './routes/settings.conne
 import { Route as SettingsCompanyRouteImport } from './routes/settings.company'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsAgentWorkspacesRouteImport } from './routes/settings.agent-workspaces'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
@@ -158,6 +159,11 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAgentWorkspacesRoute = SettingsAgentWorkspacesRouteImport.update({
+  id: '/agent-workspaces',
+  path: '/agent-workspaces',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   id: '/projects/$projectKey',
   path: '/projects/$projectKey',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/workbench': typeof WorkbenchRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agent-workspaces': typeof SettingsAgentWorkspacesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/company': typeof SettingsCompanyRoute
@@ -219,6 +226,7 @@ export interface FileRoutesByTo {
   '/workbench': typeof WorkbenchRoute
   '/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agent-workspaces': typeof SettingsAgentWorkspacesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/company': typeof SettingsCompanyRoute
@@ -250,6 +258,7 @@ export interface FileRoutesById {
   '/workbench': typeof WorkbenchRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
+  '/settings/agent-workspaces': typeof SettingsAgentWorkspacesRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/company': typeof SettingsCompanyRoute
@@ -282,6 +291,7 @@ export interface FileRouteTypes {
     | '/workbench'
     | '/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/agent-workspaces'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/company'
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/workbench'
     | '/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/agent-workspaces'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/company'
@@ -340,6 +351,7 @@ export interface FileRouteTypes {
     | '/workbench'
     | '/_chat/pull-requests'
     | '/projects/$projectKey'
+    | '/settings/agent-workspaces'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/company'
@@ -542,6 +554,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/agent-workspaces': {
+      id: '/settings/agent-workspaces'
+      path: '/agent-workspaces'
+      fullPath: '/settings/agent-workspaces'
+      preLoaderRoute: typeof SettingsAgentWorkspacesRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/projects/$projectKey': {
       id: '/projects/$projectKey'
       path: '/projects/$projectKey'
@@ -590,6 +609,7 @@ const ChatRouteChildren: ChatRouteChildren = {
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsAgentWorkspacesRoute: typeof SettingsAgentWorkspacesRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsCompanyRoute: typeof SettingsCompanyRoute
@@ -608,6 +628,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAgentWorkspacesRoute: SettingsAgentWorkspacesRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsCompanyRoute: SettingsCompanyRoute,

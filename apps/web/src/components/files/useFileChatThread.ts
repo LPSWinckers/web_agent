@@ -1,6 +1,6 @@
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, ProjectId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId, RuntimeMode, ScopedThreadRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useComposerDraftStore, type DraftId } from "~/composerDraftStore";
@@ -41,6 +41,7 @@ export function useFileChatThread(
   projectId: ProjectId,
   cwd: string,
   path: string,
+  runtimeMode: RuntimeMode,
 ) {
   const newThread = useNewThreadHandler();
   const readFile = useAtomQueryRunner(projectEnvironment.readFile, {
@@ -56,6 +57,11 @@ export function useFileChatThread(
   const draftSession = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : null,
   );
+
+  useEffect(() => {
+    const target = draftId && !draftSession?.promotedTo ? draftId : threadRef;
+    if (target) useComposerDraftStore.getState().setRuntimeMode(target, runtimeMode);
+  }, [draftId, draftSession?.promotedTo, runtimeMode, threadRef]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +89,7 @@ export function useFileChatThread(
         const id = parseFileChatSidecar(sidecar.value.contents, path);
         if (id) {
           const ref = scopeThreadRef(environmentId, id as ScopedThreadRef["threadId"]);
+          useComposerDraftStore.getState().setRuntimeMode(ref, runtimeMode);
           setThreadRef(ref);
           return { threadRef: ref, draftId: null };
         }
@@ -91,6 +98,7 @@ export function useFileChatThread(
         navigate: false,
       });
       if (!created) throw new Error("Could not start the file chat.");
+      useComposerDraftStore.getState().setRuntimeMode(created.draftId, runtimeMode);
       const contents = JSON.stringify({ version: 1, path, threadId: created.threadId });
       const saved = await writeFile({
         environmentId,
@@ -108,7 +116,7 @@ export function useFileChatThread(
     };
     void task.then(clearPending, clearPending);
     return task;
-  }, [cwd, environmentId, newThread, path, projectId, readFile, writeFile]);
+  }, [cwd, environmentId, newThread, path, projectId, readFile, runtimeMode, writeFile]);
 
   const target =
     draftId && draftSession && !draftSession.promotedTo

@@ -15,6 +15,7 @@ export type SettingsPath =
   | "/settings/projects"
   | "/settings/usage"
   | "/settings/general"
+  | "/settings/agent-workspaces"
   | "/settings/company"
   | "/settings/appearance"
   | "/settings/keybindings"
@@ -88,6 +89,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/projects": "Project",
   "/settings/usage": "Usage",
   "/settings/general": "General",
+  "/settings/agent-workspaces": "Agent workspaces",
   "/settings/company": "Company",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
@@ -155,6 +157,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
     scope: "project-defaults",
     searchTerms: ["model workspace environments projects inheritance checkout"],
+  },
+  {
+    id: "agent-workspaces",
+    title: "Agent workspaces",
+    to: "/settings/agent-workspaces",
+    scope: "environment",
+    searchTerms: [
+      "agents workflows excel powerpoint word application tools permissions instructions",
+    ],
   },
   {
     id: "project-overview",
@@ -833,6 +844,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/projects": "project",
   "/settings/usage": null,
   "/settings/general": null,
+  "/settings/agent-workspaces": "environment",
   "/settings/company": "environment",
   "/settings/appearance": null,
   "/settings/snap-shot": null,

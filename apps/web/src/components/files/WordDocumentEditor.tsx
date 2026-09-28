@@ -20,6 +20,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useAssetUrlRefresh } from "~/assets/assetUrls";
 import { ThreadRouteView } from "~/components/ThreadRouteView";
 import { Button } from "~/components/ui/button";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   latestWorkspaceMutationId,
   useWorkspaceMutationRefresh,
@@ -30,6 +31,7 @@ import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { wordAgentContext } from "./editorAgentContext";
 import { useFileChatThread } from "./useFileChatThread";
+import { agentWorkspaceContext } from "../agentWorkspaces";
 import {
   applyWordStructure,
   exportWordDocument,
@@ -83,12 +85,16 @@ function WordEditorCanvas({
   const standard =
     useAtomValue(serverEnvironment.settingsValueAtom(environmentId))?.companyLibrary.wordStandard ??
     DEFAULT_COMPANY_WORD_STANDARD;
+  const agentProfile = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.agentWorkspaces.word,
+  );
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
   const {
     ensureThread,
     target: chatTarget,
     threadRef: activeRef,
-  } = useFileChatThread(environmentId, projectId, cwd, path);
+  } = useFileChatThread(environmentId, projectId, cwd, path, agentProfile.runtimeMode);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -326,7 +332,11 @@ function WordEditorCanvas({
             <ThreadRouteView
               target={chatTarget}
               embedded
-              editorContext={wordAgentContext(path, document.editable, chatSelection)}
+              editorContext={agentWorkspaceContext(
+                "word",
+                agentProfile,
+                wordAgentContext(path, document.editable, chatSelection),
+              )}
             />
           </aside>
         ) : null}

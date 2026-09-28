@@ -255,6 +255,13 @@ import {
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
+  ImageBankConnectionStatus,
+  ImageBankConnectionTestResult,
+  ImageBankDeviceCode,
+  ImageBankError,
+  ImageBankLoginPollResult,
+} from "./imageBank.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -372,6 +379,11 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  imageBankGetStatus: "imageBank.getStatus",
+  imageBankStartLogin: "imageBank.startLogin",
+  imageBankPollLogin: "imageBank.pollLogin",
+  imageBankTestConnection: "imageBank.testConnection",
+  imageBankDisconnect: "imageBank.disconnect",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverGetTraceDiagnostics: "server.getTraceDiagnostics",
   serverGetProcessDiagnostics: "server.getProcessDiagnostics",
@@ -592,6 +604,36 @@ const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   payload: Schema.Struct({ patch: ServerSettingsPatch }),
   success: ServerSettings,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsImageBankGetStatusRpc = Rpc.make(WS_METHODS.imageBankGetStatus, {
+  payload: Schema.Struct({}),
+  success: ImageBankConnectionStatus,
+  error: Schema.Union([ImageBankError, EnvironmentAuthorizationError]),
+});
+
+const WsImageBankStartLoginRpc = Rpc.make(WS_METHODS.imageBankStartLogin, {
+  payload: Schema.Struct({}),
+  success: ImageBankDeviceCode,
+  error: Schema.Union([ImageBankError, EnvironmentAuthorizationError]),
+});
+
+const WsImageBankPollLoginRpc = Rpc.make(WS_METHODS.imageBankPollLogin, {
+  payload: Schema.Struct({}),
+  success: ImageBankLoginPollResult,
+  error: Schema.Union([ImageBankError, EnvironmentAuthorizationError]),
+});
+
+const WsImageBankTestConnectionRpc = Rpc.make(WS_METHODS.imageBankTestConnection, {
+  payload: Schema.Struct({}),
+  success: ImageBankConnectionTestResult,
+  error: Schema.Union([ImageBankError, EnvironmentAuthorizationError]),
+});
+
+const WsImageBankDisconnectRpc = Rpc.make(WS_METHODS.imageBankDisconnect, {
+  payload: Schema.Struct({}),
+  success: ImageBankConnectionStatus,
+  error: Schema.Union([ImageBankError, EnvironmentAuthorizationError]),
 });
 
 const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
@@ -1414,6 +1456,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsImageBankGetStatusRpc,
+  WsImageBankStartLoginRpc,
+  WsImageBankPollLoginRpc,
+  WsImageBankTestConnectionRpc,
+  WsImageBankDisconnectRpc,
   WsServerDiscoverSourceControlRpc,
   WsServerGetTraceDiagnosticsRpc,
   WsServerGetProcessDiagnosticsRpc,

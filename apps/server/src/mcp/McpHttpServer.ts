@@ -41,6 +41,8 @@ import {
   DeviceScreenshotToolkit,
   DeviceStandardToolkit,
 } from "./toolkits/device/tools.ts";
+import { ImageBankToolkitHandlersLive } from "./toolkits/imageBank/handlers.ts";
+import { ImageBankToolkit } from "./toolkits/imageBank/tools.ts";
 
 const unauthorized = HttpServerResponse.jsonUnsafe(
   {
@@ -660,6 +662,10 @@ export const DeviceToolkitRegistrationLive = Layer.mergeAll(
   DeviceScreenshotRegistrationLive,
 );
 
+const ImageBankToolkitRegistrationLive = McpServer.toolkit(ImageBankToolkit).pipe(
+  Layer.provide(ImageBankToolkitHandlersLive),
+);
+
 const McpTransportLive = McpServer.layerHttp({
   name: "T3 Code",
   version: packageJson.version,
@@ -671,4 +677,5 @@ export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
+  ImageBankToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

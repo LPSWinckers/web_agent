@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   ArrowDownIcon,
@@ -10,11 +10,19 @@ import {
   SparklesIcon,
   Trash2Icon,
 } from "lucide-react";
-import type { EnvironmentId, ProjectId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  AgentWorkspaceProfileSettings,
+  EnvironmentId,
+  ProjectId,
+  RuntimeMode,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { CONSULTANCY_PRESENTATION_STANDARD } from "@t3tools/shared/consultancyPresentationStandard";
 import { CONSULTANCY_CHART_TYPES } from "@t3tools/shared/consultancyChart";
 import { ConsultancyChartView } from "~/components/charts/ConsultancyChartView";
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { requestDraftAutoSend, type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useThread, useThreadShell } from "~/state/entities";
 import {
@@ -22,7 +30,11 @@ import {
   useWorkspaceMutationRefresh,
 } from "~/hooks/useWorkspaceMutationRefresh";
 import { projectEnvironment } from "~/state/projects";
+import { assetEnvironment } from "~/state/assets";
+import { usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import { resolveAssetUrl, useAssetUrlState } from "~/assets/assetUrls";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Dialog, DialogPopup, DialogTitle } from "~/components/ui/dialog";
@@ -32,7 +44,9 @@ import {
   useProjectFileQuery,
 } from "./projectFilesQueryState";
 import { downloadPresentation } from "./presentationExport";
+import type { PresentationExportImage } from "./presentationExport";
 import { presentationAgentContext } from "./editorAgentContext";
+import { agentWorkspaceContext, defaultAgentWorkspaceProfiles } from "../agentWorkspaces";
 import { buildPresentation, importPresentationChart } from "./presentationWork";
 import {
   deckPath,
@@ -65,6 +79,9 @@ function PresentationChat({
   onThreadRefChange,
   onBeforeStart,
   onThreadCreated,
+  runtimeMode,
+  queuedPrompt,
+  onQueuedPromptHandled,
 }: {
   environmentId: EnvironmentId;
   projectId: ProjectId;
@@ -73,6 +90,9 @@ function PresentationChat({
   onThreadRefChange: (ref: ScopedThreadRef | null) => void;
   onBeforeStart: () => Promise<string>;
   onThreadCreated: (path: string, threadId: ThreadId) => Promise<void>;
+  runtimeMode: RuntimeMode;
+  queuedPrompt: string | null;
+  onQueuedPromptHandled: () => void;
 }) {
   const newThread = useNewThreadHandler();
   const [draftId, setDraftId] = useState<DraftId | null>(null);
@@ -87,29 +107,63 @@ function PresentationChat({
     ? (draftSession?.promotedTo ?? (reservedShell ? reservedRef : null))
     : (threadRef ?? null);
   useEffect(() => onThreadRefChange(activeRef), [activeRef, onThreadRefChange]);
+  useEffect(() => {
+    const target = draftId && !draftSession?.promotedTo ? draftId : activeRef;
+    if (target) useComposerDraftStore.getState().setRuntimeMode(target, runtimeMode);
+  }, [activeRef, draftId, draftSession?.promotedTo, runtimeMode]);
   const target = activeRef
     ? { kind: "server" as const, threadRef: activeRef }
     : draftId
       ? { kind: "draft" as const, draftId }
       : null;
-  const start = async () => {
-    setPending(true);
-    setError("");
-    try {
-      const path = await onBeforeStart();
-      const result = await newThread(scopeProjectRef(environmentId, projectId), {
-        navigate: false,
-      });
-      if (!result) throw new Error("Could not start the presentation chat.");
-      setDraftId(result.draftId);
-      setReservedRef(scopeThreadRef(environmentId, result.threadId));
-      await onThreadCreated(path, result.threadId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not start the presentation chat.");
-    } finally {
-      setPending(false);
+  const start = useCallback(
+    async (initialPrompt?: string) => {
+      setPending(true);
+      setError("");
+      try {
+        const path = await onBeforeStart();
+        const result = await newThread(scopeProjectRef(environmentId, projectId), {
+          navigate: false,
+        });
+        if (!result) throw new Error("Could not start the presentation chat.");
+        useComposerDraftStore.getState().setRuntimeMode(result.draftId, runtimeMode);
+        if (initialPrompt) {
+          requestDraftAutoSend(result.draftId, initialPrompt);
+          useComposerDraftStore.getState().setPrompt(result.draftId, initialPrompt);
+          onQueuedPromptHandled();
+        }
+        setDraftId(result.draftId);
+        setReservedRef(scopeThreadRef(environmentId, result.threadId));
+        await onThreadCreated(path, result.threadId);
+      } catch (cause) {
+        if (initialPrompt) onQueuedPromptHandled();
+        setError(cause instanceof Error ? cause.message : "Could not start the presentation chat.");
+      } finally {
+        setPending(false);
+      }
+    },
+    [
+      environmentId,
+      newThread,
+      onBeforeStart,
+      onQueuedPromptHandled,
+      onThreadCreated,
+      projectId,
+      runtimeMode,
+    ],
+  );
+
+  useEffect(() => {
+    if (!queuedPrompt) return;
+    const target = draftId ?? threadRef;
+    if (target) {
+      requestDraftAutoSend(target, queuedPrompt);
+      useComposerDraftStore.getState().setPrompt(target, queuedPrompt);
+      onQueuedPromptHandled();
+      return;
     }
-  };
+    if (!pending) void start(queuedPrompt);
+  }, [draftId, onQueuedPromptHandled, pending, queuedPrompt, start, threadRef]);
 
   if (!target)
     return (
@@ -137,18 +191,28 @@ function PresentationChat({
 function SlideCanvas({
   slide,
   index,
+  environmentId,
+  cwd,
   selecting,
   selectedElement,
   onSelectElement,
 }: {
   slide: PresentationSlide;
   index: number;
+  environmentId: EnvironmentId;
+  cwd: string;
   selecting: boolean;
   selectedElement: string | null;
   onSelectElement: (element: string) => void;
 }) {
   const { style, colors } = CONSULTANCY_PRESENTATION_STANDARD;
   const headline = slide.layout === "cover" || slide.layout === "section";
+  const imageResource = useMemo(
+    () =>
+      slide.image ? { _tag: "draft-workspace-file" as const, cwd, path: slide.image.path } : null,
+    [cwd, slide.image?.path],
+  );
+  const imageAsset = useAssetUrlState(environmentId, imageResource);
   return (
     <div
       className={`relative aspect-video overflow-hidden rounded-lg p-8 shadow-sm ${headline ? "border-l-4" : "border-t-4"}`}
@@ -215,6 +279,31 @@ function SlideCanvas({
             {slide.rightBody}
           </p>
         </div>
+      ) : slide.layout === "content" && slide.image ? (
+        <div className="mt-7 grid max-h-[58%] grid-cols-2 gap-4 overflow-hidden">
+          <p
+            className={`overflow-auto whitespace-pre-line text-lg leading-relaxed ${selecting ? "cursor-pointer hover:outline hover:outline-2 hover:outline-primary" : ""} ${selectedElement === "body" ? "outline outline-2 outline-primary" : ""}`}
+            onClick={() => selecting && onSelectElement("body")}
+          >
+            {slide.body}
+          </p>
+          <div
+            className={`flex min-h-0 items-center justify-center overflow-hidden rounded ${selecting ? "cursor-pointer hover:outline hover:outline-2 hover:outline-primary" : ""} ${selectedElement === "image" ? "outline outline-2 outline-primary" : ""}`}
+            onClick={() => selecting && onSelectElement("image")}
+          >
+            {imageAsset._tag === "Success" ? (
+              <img
+                src={imageAsset.url}
+                alt={slide.image.alt}
+                className="max-h-full max-w-full object-contain"
+              />
+            ) : (
+              <span className="text-xs opacity-70">
+                {imageAsset._tag === "Failure" ? "Image unavailable" : "Loading image…"}
+              </span>
+            )}
+          </div>
+        </div>
       ) : (
         <p
           className="mt-7 max-h-[58%] overflow-auto whitespace-pre-line text-lg leading-relaxed"
@@ -250,6 +339,7 @@ interface EditorProps {
   onSaved?: (path: string) => void;
   onAskAi?: (prompt: string) => boolean;
   projectId?: ProjectId;
+  agentProfile?: AgentWorkspaceProfileSettings;
 }
 
 function PresentationEditor({
@@ -260,8 +350,14 @@ function PresentationEditor({
   onSaved,
   onAskAi,
   projectId,
+  agentProfile,
 }: EditorProps) {
   const writeFile = useAtomCommand(projectEnvironment.writeFile, { reportFailure: false });
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
+    refresh: true,
+    reportFailure: false,
+  });
+  const preparedConnection = usePreparedConnection(environmentId);
   const [deck, setDeck] = useState(initialDeck);
   const [dirty, setDirty] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -269,6 +365,7 @@ function PresentationEditor({
   const [history, setHistory] = useState<Array<{ role: "user" | "status"; text: string }>>([]);
   const [selected, setSelected] = useState(0);
   const [brief, setBrief] = useState("");
+  const [queuedPresentationPrompt, setQueuedPresentationPrompt] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [savedPath, setSavedPath] = useState(relativePath);
@@ -283,6 +380,55 @@ function PresentationEditor({
     cwd,
     savedPath ?? null,
     savedPath !== undefined,
+  );
+  const buildDeck = useCallback(
+    async (sourceDeck: PresentationDeck) => {
+      const paths = [
+        ...new Set(sourceDeck.slides.flatMap((slide) => (slide.image ? [slide.image.path] : []))),
+      ];
+      if (paths.length === 0) return buildPresentation(sourceDeck);
+      if (preparedConnection._tag === "None") {
+        throw new Error("Connect to the project environment to export its images.");
+      }
+      const entries = await Promise.all(
+        paths.map(async (path) => {
+          const result = await createAssetUrl({
+            environmentId,
+            input: { resource: { _tag: "draft-workspace-file", cwd, path } },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+          const url = resolveAssetUrl(
+            preparedConnection.value.httpBaseUrl,
+            result.value.relativeUrl,
+          );
+          if (!url) throw new Error(`Could not create an image URL for ${path}.`);
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Could not read presentation image ${path}.`);
+          const blob = await response.blob();
+          if (!blob.type.startsWith("image/")) throw new Error(`The file ${path} is not an image.`);
+          const bitmap = await createImageBitmap(blob);
+          const width = bitmap.width;
+          const height = bitmap.height;
+          bitmap.close();
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          let binary = "";
+          const chunkSize = 0x8000;
+          for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+            binary += String.fromCharCode(
+              ...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)),
+            );
+          }
+          const image: PresentationExportImage = {
+            data: `data:${blob.type};base64,${btoa(binary)}`,
+            width,
+            height,
+          };
+          return [path, image] as const;
+        }),
+      );
+      return buildPresentation(sourceDeck, Object.fromEntries(entries));
+    },
+    [createAssetUrl, cwd, environmentId, preparedConnection],
   );
   const mutationId = useMemo(
     () => latestWorkspaceMutationId(chatThread?.activities ?? []),
@@ -307,7 +453,7 @@ function PresentationEditor({
       if (lastExportedSource.current !== sourceFile.data.contents) {
         lastExportedSource.current = sourceFile.data.contents;
         const pptxPath = (savedPath ?? "").replace(/\.t3deck\.json$/i, ".pptx");
-        void buildPresentation(nextDeck)
+        void buildDeck(nextDeck)
           .then((contents) =>
             writeFile({
               environmentId,
@@ -326,8 +472,9 @@ function PresentationEditor({
     } catch {
       // A partial agent write is replaced by the next completed file update.
     }
-  }, [cwd, deck, dirty, environmentId, savedPath, sourceFile.data?.contents, writeFile]);
+  }, [buildDeck, cwd, deck, dirty, environmentId, savedPath, sourceFile.data?.contents, writeFile]);
   const lastDeckFromFile = useRef(initialDeck);
+  const resolvedAgentProfile = agentProfile ?? defaultAgentWorkspaceProfiles(undefined).powerpoint;
   const selectedSlide = deck.slides[selected];
 
   useEffect(() => {
@@ -360,7 +507,7 @@ function PresentationEditor({
       const sourcePath = `${base}.t3deck.json`;
       const pptxPath = `${base}.pptx`;
       const contents = JSON.stringify(deck, null, 2);
-      const base64 = await buildPresentation(deck);
+      const base64 = await buildDeck(deck);
       const sourceResult = await writeFile({
         environmentId,
         input: { cwd, relativePath: sourcePath, contents },
@@ -396,14 +543,13 @@ function PresentationEditor({
     if (!request) return;
     try {
       const path = await save(false);
-      const inserted = onAskAi?.(
-        `${selectedElement ? `Slide ${selected + 1}, ${selectedElement} in ` : `For `}${path}: ${request}`,
-      );
-      if (!inserted) throw new Error("Open a project chat before asking AI.");
+      const prompt = `${selectedElement ? `Slide ${selected + 1}, ${selectedElement} in ` : `For `}${path}: ${request}`;
+      if (projectId) setQueuedPresentationPrompt(prompt);
+      else if (!onAskAi?.(prompt)) throw new Error("Open a project chat before asking AI.");
       setHistory((current) => [
         ...current,
         { role: "user", text: request },
-        { role: "status", text: "Ready in project chat. Send it there." },
+        { role: "status", text: "Sent to the presentation agent." },
       ]);
       setBrief("");
     } catch (cause) {
@@ -479,6 +625,8 @@ function PresentationEditor({
               <SlideCanvas
                 slide={selectedSlide}
                 index={selected}
+                environmentId={environmentId}
+                cwd={cwd}
                 selecting={selecting}
                 selectedElement={selectedElement}
                 onSelectElement={(element) => {
@@ -693,12 +841,19 @@ function PresentationEditor({
               {...(deck.chatThreadId
                 ? { threadRef: scopeThreadRef(environmentId, deck.chatThreadId) }
                 : {})}
-              editorContext={presentationAgentContext(
-                savedPath ?? `${deckPath(deck.title)}.t3deck.json`,
-                selected + 1,
-                selectedElement,
+              editorContext={agentWorkspaceContext(
+                "powerpoint",
+                resolvedAgentProfile,
+                presentationAgentContext(
+                  savedPath ?? `${deckPath(deck.title)}.t3deck.json`,
+                  selected + 1,
+                  selectedElement,
+                ),
               )}
               onThreadRefChange={setChatThreadRef}
+              runtimeMode={resolvedAgentProfile.runtimeMode}
+              queuedPrompt={queuedPresentationPrompt}
+              onQueuedPromptHandled={() => setQueuedPresentationPrompt(null)}
               onBeforeStart={() => (savedPath && !dirty ? Promise.resolve(savedPath) : save(false))}
               onThreadCreated={async (path, threadId) => {
                 const updated = { ...deck, chatThreadId: threadId };
@@ -777,6 +932,7 @@ function PresentationEditor({
 export function PresentationMaker(props: {
   environmentId: EnvironmentId;
   cwd: string;
+  agentProfile?: AgentWorkspaceProfileSettings;
   onOpenInChat?: (prompt: string) => boolean;
   onSaved?: (path: string) => void;
   buttonLabel?: string;
@@ -807,6 +963,7 @@ export function PresentationMaker(props: {
             environmentId={props.environmentId}
             cwd={props.cwd}
             initialDeck={draft}
+            {...(props.agentProfile ? { agentProfile: props.agentProfile } : {})}
             {...(props.projectId ? { projectId: props.projectId } : {})}
             onSaved={(path) => {
               props.onSaved?.(path);
@@ -827,6 +984,7 @@ export function PresentationDeckPreview(props: {
   name: string;
   environmentId: EnvironmentId;
   cwd: string;
+  agentProfile?: AgentWorkspaceProfileSettings;
   onAskAi?: (prompt: string) => boolean;
   projectId?: ProjectId;
 }) {
@@ -853,6 +1011,7 @@ export function PresentationDeckPreview(props: {
       cwd={props.cwd}
       relativePath={props.name}
       initialDeck={parsed.deck}
+      {...(props.agentProfile ? { agentProfile: props.agentProfile } : {})}
       {...(props.projectId ? { projectId: props.projectId } : {})}
       {...(props.onAskAi ? { onAskAi: props.onAskAi } : {})}
     />

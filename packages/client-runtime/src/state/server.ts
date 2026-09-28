@@ -1110,6 +1110,29 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    imageBankGetStatus: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:image-bank-status",
+      tag: WS_METHODS.imageBankGetStatus,
+    }),
+    imageBankStartLogin: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:image-bank-start-login",
+      tag: WS_METHODS.imageBankStartLogin,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    imageBankPollLogin: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:image-bank-poll-login",
+      tag: WS_METHODS.imageBankPollLogin,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    imageBankTestConnection: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:image-bank-test-connection",
+      tag: WS_METHODS.imageBankTestConnection,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    imageBankDisconnect: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:image-bank-disconnect",
+      tag: WS_METHODS.imageBankDisconnect,
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,

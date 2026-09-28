@@ -15,6 +15,14 @@ export const PRESENTATION_STYLE: PresentationStyle = CONSULTANCY_PRESENTATION_ST
 
 export type SlideLayout = "cover" | "section" | "content" | "two-column" | "chart";
 export type PresentationChart = ConsultancyChart;
+export interface PresentationImage {
+  path: string;
+  alt: string;
+  sourceItemId?: string;
+  sourceUrl?: string;
+  keywords?: string[];
+  restrictions?: string[];
+}
 export interface PresentationSlide {
   id: string;
   layout: SlideLayout;
@@ -22,6 +30,7 @@ export interface PresentationSlide {
   body: string;
   rightBody?: string;
   chart?: PresentationChart;
+  image?: PresentationImage;
   source?: string;
 }
 export interface PresentationDeck {
@@ -104,6 +113,36 @@ export function parseDeck(source: string): PresentationDeck {
       if (!chart) throw new Error(`Slide ${index + 1} has invalid chart data.`);
       parsedChart = chart;
     }
+    let parsedImage: PresentationImage | undefined;
+    if (item.image !== undefined) {
+      if (
+        item.layout !== "content" ||
+        !isRecord(item.image) ||
+        typeof item.image.path !== "string" ||
+        item.image.path.trim().length === 0 ||
+        typeof item.image.alt !== "string"
+      ) {
+        throw new Error(
+          `Slide ${index + 1} has an invalid image. Images are supported on content slides.`,
+        );
+      }
+      parsedImage = {
+        path: item.image.path,
+        alt: item.image.alt,
+        ...(typeof item.image.sourceItemId === "string"
+          ? { sourceItemId: item.image.sourceItemId }
+          : {}),
+        ...(typeof item.image.sourceUrl === "string" ? { sourceUrl: item.image.sourceUrl } : {}),
+        ...(Array.isArray(item.image.keywords) &&
+        item.image.keywords.every((value) => typeof value === "string")
+          ? { keywords: item.image.keywords }
+          : {}),
+        ...(Array.isArray(item.image.restrictions) &&
+        item.image.restrictions.every((value) => typeof value === "string")
+          ? { restrictions: item.image.restrictions }
+          : {}),
+      };
+    }
     return {
       id: typeof item.id === "string" ? item.id : `slide-${index + 1}`,
       layout: item.layout as SlideLayout,
@@ -112,6 +151,7 @@ export function parseDeck(source: string): PresentationDeck {
       ...(typeof item.rightBody === "string" ? { rightBody: item.rightBody } : {}),
       ...(typeof item.source === "string" ? { source: item.source } : {}),
       ...(parsedChart ? { chart: parsedChart } : {}),
+      ...(parsedImage ? { image: parsedImage } : {}),
     };
   });
   return {

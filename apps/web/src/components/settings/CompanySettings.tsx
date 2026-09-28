@@ -20,6 +20,7 @@ import { Textarea } from "../ui/textarea";
 import { SettingsPageContainer } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ConsultancyStandardGallery } from "./ConsultancyStandardGallery";
+import { ImageBankSettings } from "./ImageBankSettings";
 
 type EntryGroup = "skills";
 
@@ -152,6 +153,8 @@ function CompanySettingsEditor({ environmentId }: { environmentId: EnvironmentId
           </p>
         ) : null}
       </div>
+
+      <ImageBankSettings environmentId={environmentId} />
 
       <ConsultancyStandardGallery />
 
